@@ -94,16 +94,6 @@ function App(): React.JSX.Element {
 	  if (carPlayConnected) {
 		const gridTemplate = new GridTemplate({
 			buttons: [
-			  {
-				id: 'List',
-				titleVariants: ['List'],
-				image: require('images/button.png'),
-			  },
-			  {
-				id: 'Grid',
-				titleVariants: ['Grid'],
-				image: require('images/button.png'),
-			  }
 			],
 			title: 'Hello, world',
 		  });
