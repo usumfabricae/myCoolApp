@@ -13,8 +13,8 @@ workflows:
             certificates:
               - IPhone
           vars:
-            XCODE_PROJECT: "myCoolApp.xcodeproj" # <-- Put the name of your Xcode workspace here
-
+            XCODE_WORKSPACE: "myCoolApp.xcworkspace" # <-- Put the name of your Xcode workspace here
+            XCODE_SCHEME: "myCoolApp" # <-- Put the name of your Xcode scheme here
             APP_ID: org.reactjs.native.example.myCoolApp # <-- Put the app id number here. This is found in App Store Connect > App > General > App Information
           node: v19.7.0
           xcode: latest
@@ -42,11 +42,13 @@ workflows:
             - name: Print Build configuration
               script: |
                 xcode-project show-build-settings \
-                  --project "$CM_BUILD_DIR/ios/$XCODE_PROJECT" 
+                  --workspace "$CM_BUILD_DIR/ios/$XCODE_WORKSPACE" \
+                  --scheme "$XCODE_SCHEME" 
             - name: Build ipa for distribution
               script: |
                 xcode-project build-ipa \
-                  --project "$CM_BUILD_DIR/ios/$XCODE_PROJECT"  \
+                  --workspace "$CM_BUILD_DIR/ios/$XCODE_WORKSPACE" \
+                  --scheme "$XCODE_SCHEME" \
                   --archive-flags="-destination 'generic/platform=iOS'"
         artifacts:
             - build/ios/ipa/*.ipa
