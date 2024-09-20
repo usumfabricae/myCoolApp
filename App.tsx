@@ -5,7 +5,8 @@
  * @format
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+
 import type {PropsWithChildren} from 'react';
 import {
   SafeAreaView,
@@ -24,6 +25,9 @@ import {
   LearnMoreLinks,
   ReloadInstructions,
 } from 'react-native/Libraries/NewAppScreen';
+
+import { CarPlay, GridTemplate } from 'react-native-carplay';
+
 
 type SectionProps = PropsWithChildren<{
   title: string;
@@ -56,43 +60,70 @@ function Section({children, title}: SectionProps): React.JSX.Element {
 }
 
 function App(): React.JSX.Element {
+  
   const isDarkMode = useColorScheme() === 'dark';
 
   const backgroundStyle = {
     backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
   };
 
+	const [carPlayConnected, setCarPlayConnected] = useState(CarPlay.connected);
+
+  useEffect(() => {
+    function onConnect() {
+      setCarPlayConnected(true);
+    }
+
+    function onDisconnect() {
+      setCarPlayConnected(false);
+    }
+	
+// register connect and disconnect callbacks
+    CarPlay.registerOnConnect(onConnect);
+    CarPlay.registerOnDisconnect(onDisconnect);
+
+    return () => {
+// unregister the callbacks in the return statement
+      CarPlay.unregisterOnConnect(onConnect);
+      CarPlay.unregisterOnDisconnect(onDisconnect);
+    };
+  });
+  
+  useEffect(() => {
+	// only create the template if connected
+	  if (carPlayConnected) {
+		const gridTemplate = new GridTemplate({
+			buttons: [
+			  {
+				id: 'List',
+				titleVariants: ['List'],
+				image: require('images/button.png'),
+			  },
+			  {
+				id: 'Grid',
+				titleVariants: ['Grid'],
+				image: require('images/button.png'),
+			  }
+			],
+			title: 'Hello, world',
+		  });
+	  
+		  CarPlay.setRootTemplate(gridTemplate);
+		
+		// clean up the grid template in the return statement
+// this will only be run when carplayconnected changes
+// to false, or the component is unmounted
+		return () => {
+	gridTemplate = undefined;
+}
+	  }
+    
+  }, [carPlayConnected]);
+    
   return (
-    <SafeAreaView style={backgroundStyle}>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={backgroundStyle.backgroundColor}
-      />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        style={backgroundStyle}>
-        <Header />
-        <View
-          style={{
-            backgroundColor: isDarkMode ? Colors.black : Colors.white,
-          }}>
-          <Section title="Step One">
-            Edit <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
-          </Section>
-          <Section title="See Your Changes">
-            <ReloadInstructions />
-          </Section>
-          <Section title="Debug">
-            <DebugInstructions />
-          </Section>
-          <Section title="Learn More">
-            Read the docs to discover what to do next:
-          </Section>
-          <LearnMoreLinks />
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+   <View>
+     <Text>Hello, Word</Text>
+   </View>
   );
 }
 
