@@ -22,6 +22,9 @@ target 'myCoolApp' do
     # An absolute path to your application root.
     :app_path => "#{Pod::Config.instance.installation_root}/.."
   )
+  
+  pod 'react-native-carplay', path: '../node_modules/react-native-carplay'
+
 
   target 'myCoolAppTests' do
     inherit! :complete

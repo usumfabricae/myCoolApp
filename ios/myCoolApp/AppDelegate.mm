@@ -1,4 +1,5 @@
 #import "AppDelegate.h"
+#import <RNCarPlay.h>
 
 #import <React/RCTBundleURLProvider.h>
 
@@ -26,6 +27,14 @@
 #else
   return [[NSBundle mainBundle] URLForResource:@"main" withExtension:@"jsbundle"];
 #endif
+}
+
+- (void)application:(UIApplication *)application didConnectCarInterfaceController:(CPInterfaceController *)interfaceController toWindow:(CPWindow *)window {
+  [RNCarPlay connectWithInterfaceController:interfaceController window:window];
+}
+
+- (void)application:(nonnull UIApplication *)application didDisconnectCarInterfaceController:(nonnull CPInterfaceController *)interfaceController fromWindow:(nonnull CPWindow *)window {
+  [RNCarPlay disconnect];
 }
 
 @end
