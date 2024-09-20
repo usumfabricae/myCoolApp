@@ -4,6 +4,8 @@
 
 @interface AppDelegate : RCTAppDelegate
 
+@end
+
 @interface AppDelegate : UIResponder <UIApplicationDelegate, CPApplicationDelegate>
 
 @end
