@@ -1,0 +1,62 @@
+# Check out https://docs.codemagic.io/yaml/building-a-react-native-app/ for more information
+# Please review and update values
+
+workflows:
+    react-native-ios:
+        name: React Native iOS
+        max_build_duration: 120
+        instance_type: mac_mini_m2
+        environment:
+          ios_signing:
+            provisioning_profiles:
+              - provisioning-profile-myCoolApp
+            certificates:
+              - IPhone
+          vars:
+            XCODE_PROJECT: "myCoolApp.xcodeproj" # <-- Put the name of your Xcode workspace here
+
+            APP_ID: org.reactjs.native.example.myCoolApp # <-- Put the app id number here. This is found in App Store Connect > App > General > App Information
+          node: v19.7.0
+          xcode: latest
+          cocoapods: default
+        scripts:
+            - name: Install npm dependencies
+              script: |
+                npm install
+            - name: Install CocoaPods dependencies
+              script: |
+                cd ios && pod install
+            - name: Set  PRODUCT_BUNDLE_IDENTIFIER  
+              script: |
+                /usr/bin/plutil -replace CFBundleIdentifier -string org.reactjs.native.example.myCoolApp ios/myCoolApp/Info.plist
+                find **/*.xcodeproj -type f | xargs sed -i "" -E 's/PRODUCT_BUNDLE_IDENTIFIER = ".+";//g'
+            - name: Set up code signing settings on Xcode project
+              script: |
+                xcode-project use-profiles --warn-only --project ios/*.xcodeproj
+            - name: Increment build number
+              script: |
+                # Information about getting the latest build version can be found here: https://docs.codemagic.io/knowledge-codemagic/build-versioning/#app-store-or-testflight-latest-build-number
+                cd $CM_BUILD_DIR/ios
+                LATEST_BUILD_NUMBER=$(app-store-connect get-latest-testflight-build-number "$APP_ID")
+                agvtool new-version -all $(($LATEST_BUILD_NUMBER + 1))
+            - name: Print Build configuration
+              script: |
+                xcode-project show-build-settings \
+                  --project "$CM_BUILD_DIR/ios/$XCODE_PROJECT" 
+            - name: Build ipa for distribution
+              script: |
+                xcode-project build-ipa \
+                  --project "$CM_BUILD_DIR/ios/$XCODE_PROJECT"  \
+                  --archive-flags="-destination 'generic/platform=iOS'"
+        artifacts:
+            - build/ios/ipa/*.ipa
+            - /tmp/xcodebuild_logs/*.log
+            - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.app
+            - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+        publishing:
+          email:
+            recipients:
+              - dalessiof@gmail.com
+            notify:
+              success: true
+              failure: false
