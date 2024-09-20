@@ -3,6 +3,6 @@
 #import <CarPlay/CarPlay.h>
 
 
-@interface AppDelegate : UIResponder <UIApplicationDelegate, CPApplicationDelegate>
+@interface AppDelegate : RCTAppDelegate <UIApplicationDelegate, CPApplicationDelegate>
 
 @end
