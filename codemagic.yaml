@@ -13,8 +13,8 @@ workflows:
             certificates:
               - IPhone
           vars:
-            XCODE_WORKSPACE: "myCoolApp.xcworkspace" # <-- Put the name of your Xcode workspace here
-            XCODE_SCHEME: "myCoolApp" # <-- Put the name of your Xcode scheme here
+            XCODE_WORKSPACE: "RNCarPlayScene.xcworkspace" # <-- Put the name of your Xcode workspace here
+            XCODE_SCHEME: "RNCarPlayScene" # <-- Put the name of your Xcode scheme here
             APP_ID: org.reactjs.native.example.myCoolApp # <-- Put the app id number here. This is found in App Store Connect > App > General > App Information
           node: v19.7.0
           xcode: latest
