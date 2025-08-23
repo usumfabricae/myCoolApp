@@ -19,12 +19,9 @@ workflows:
           if [ -f "pubspec.yaml" ]; then
             flutter packages pub get
           fi
-      - name: Make gradlew executable
-        script: |
-          chmod +x ./gradlew
       - name: Build APK
         script: |
-          ./gradlew assembleDebug
+          gradle assembleDebug
     artifacts:
       - app/build/outputs/**/*.apk
       - app/build/outputs/**/mapping.txt
