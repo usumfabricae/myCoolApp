@@ -15,10 +15,12 @@ workflows:
           echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/local.properties"
       - name: Download OpenCV Android SDK
         script: |
-          cd opencv
-          curl -L -o opencv-4120-android-sdk.aar "https://github.com/opencv/opencv/releases/download/4.12.0/opencv-4.12.0-android-sdk.zip"
-          unzip -j opencv-4.12.0-android-sdk.zip "OpenCV-android-sdk/sdk/opencv-4120-android-sdk.aar" || echo "Using zip as AAR"
-          mv opencv-4.12.0-android-sdk.zip opencv-4120-android-sdk.aar 2>/dev/null || true
+          mkdir -p opencv/libs
+          cd opencv/libs
+          curl -L -o opencv-android-sdk.zip "https://github.com/opencv/opencv/releases/download/4.12.0/opencv-4.12.0-android-sdk.zip"
+          unzip opencv-android-sdk.zip
+          find . -name "*.aar" -exec cp {} opencv-4120-android-sdk.aar \;
+          rm -rf OpenCV-android-sdk opencv-android-sdk.zip
       - name: Get Flutter dependencies
         script: |
           # Skip if not a Flutter project
