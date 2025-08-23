@@ -19,9 +19,9 @@ workflows:
           if [ -f "pubspec.yaml" ]; then
             flutter packages pub get
           fi
-      - name: Set up keystore
+      - name: Make gradlew executable
         script: |
-          echo $CM_KEYSTORE | base64 --decode > /tmp/keystore.keystore
+          chmod +x ./gradlew
       - name: Build APK
         script: |
           ./gradlew assembleDebug
