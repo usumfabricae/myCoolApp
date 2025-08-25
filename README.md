@@ -66,68 +66,108 @@ The project is now ready for implementation of the remaining tasks:
 - OpenCV Android SDK 4.5.0 or later
 - Device running Android 10 (API 29) recommended for full feature testing
 
-## CI/CD with Codemagic
+## 🚀 CI/CD with Codemagic (Exclusive Build Platform)
 
-This project is configured for automated building and testing using Codemagic. The `codemagic.yaml` file defines three workflows:
+**⚠️ IMPORTANT**: This project uses **exclusive CI/CD operation** through Codemagic platform. All builds, tests, and deployments must be performed through the CI/CD pipeline. Local builds and tests are not permitted per project requirements 7.2 and 8.6.
 
-### 1. Main Development Workflow (`android-workflow`)
-- **Triggers**: Push to main/develop branches, pull requests
+### 📋 CI/CD Requirements Compliance
+
+This setup addresses:
+- **Requirement 7**: Codemagic CI/CD platform for all builds and tests
+- **Requirement 8**: Git workflow integration for triggering CI/CD pipelines
+
+### 🔧 Codemagic Workflows
+
+The `codemagic.yaml` file defines three exclusive workflows:
+
+#### 1. Development Workflow (`android-workflow`)
+- **Triggers**: Push to `main`, `develop`, or `feature/*` branches
 - **Actions**: 
-  - Builds debug APK
-  - Runs unit tests
-  - Performs lint checks
-  - Generates test reports
+  - Compile debug APK
+  - Execute unit tests through Codemagic
+  - Run Android lint checks
+  - Generate test and lint reports
+  - Validate Android 10 compatibility
 - **Artifacts**: APK files, test reports, lint results
 
-### 2. Release Workflow (`android-release-workflow`)
-- **Triggers**: Git tags matching `v*.*.*` pattern
+#### 2. Release Workflow (`android-release-workflow`)
+- **Triggers**: Version tags matching `v*.*.*` pattern
 - **Actions**:
-  - Runs comprehensive test suite
-  - Builds release APK (currently unsigned)
-  - Generates release artifacts with build info
-- **Artifacts**: Release APK, build metadata
+  - Run comprehensive test suite through Codemagic
+  - Build release APK using secure environment
+  - Generate release artifacts with build metadata
+- **Artifacts**: Release APK, build metadata, mapping files
 
-### 3. Test-Only Workflow (`android-test-workflow`)
+#### 3. Test-Only Workflow (`android-test-workflow`)
 - **Triggers**: Pull requests
 - **Actions**:
-  - Runs unit tests with coverage
-  - Validates Android 10 compatibility
-  - Generates coverage reports
+  - Execute unit tests with coverage through Codemagic
+  - Run lint checks and Android 10 validation
+  - Generate test coverage reports
 - **Artifacts**: Test results, coverage reports
 
-### Setup Instructions for Codemagic
+### 🛠️ Setup and Validation
 
-1. **Connect Repository**: Link your Git repository to Codemagic
-2. **Configure Environment**: 
-   - Update email notifications in `codemagic.yaml`
-   - Add any required environment variables
-3. **OpenCV Setup**: Ensure OpenCV module is properly committed to the repository
-4. **Optional Signing**: For release builds, configure app signing:
-   - Add keystore file as encrypted environment variable
-   - Update signing configuration in `codemagic.yaml`
+#### Before Committing Changes
+Validate your CI/CD setup using the provided scripts:
 
-### Local Testing Commands
-
-```bash
-# Run unit tests
-./gradlew testDebugUnitTest
-
-# Run tests with coverage
-./gradlew testDebugUnitTest jacocoTestReport
-
-# Run lint checks
-./gradlew lintDebug
-
-# Build debug APK
-./gradlew assembleDebug
+**Windows (PowerShell)**:
+```powershell
+cd myCoolApp
+.\scripts\validate-cicd-setup.ps1
 ```
 
-### Android 10 Compatibility Validation
+**Linux/Mac**:
+```bash
+cd myCoolApp
+./scripts/validate-cicd-setup.sh
+```
 
-The CI pipeline automatically validates:
-- Target SDK is set to 29 (Android 10)
-- Required camera permissions are declared
-- Android 10 privacy compliance features are implemented
+#### Git Workflow for CI/CD Triggering
+```bash
+# 1. Commit changes with descriptive message
+git add .
+git commit -m "feat: implement camera permission handling with Android 10 compliance"
+
+# 2. Push to trigger CI/CD workflow
+git push origin main
+
+# 3. For releases, create and push version tag
+git tag -a v1.0.0 -m "Release version 1.0.0"
+git push origin v1.0.0
+```
+
+### 📊 Automated Validation
+
+The CI/CD pipeline automatically validates:
+- ✅ Target SDK 29 (Android 10) compliance
+- ✅ Camera permissions declared in manifest
+- ✅ Android 10 privacy compliance features
+- ✅ Unit test execution and coverage
+- ✅ Code quality through lint checks
+- ✅ Build compilation success
+
+### 📚 Documentation
+
+For detailed CI/CD information, see:
+- [CICD_README.md](CICD_README.md) - Comprehensive CI/CD setup guide
+- [GIT_WORKFLOW.md](GIT_WORKFLOW.md) - Git workflow and branching strategy
+
+### ⚠️ No Local Builds Permitted
+
+**Important**: Local build commands are provided for reference only. All actual builds and tests must be performed through Codemagic:
+
+```bash
+# ❌ DO NOT RUN LOCALLY - For reference only
+# ./gradlew testDebugUnitTest
+# ./gradlew assembleDebug
+# ./gradlew lintDebug
+
+# ✅ CORRECT APPROACH - Use git workflow to trigger CI/CD
+git add .
+git commit -m "your changes"
+git push origin branch-name
+```
 
 ## Testing
 

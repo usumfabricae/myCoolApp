@@ -6,6 +6,10 @@ import android.os.Bundle;
 import android.util.Log;
 import android.widget.Toast;
 import com.example.opencvcamerastream.permissions.PermissionHandler;
+import com.example.opencvcamerastream.processing.OpenCVProcessor;
+import org.opencv.android.BaseLoaderCallback;
+import org.opencv.android.LoaderCallbackInterface;
+import org.opencv.android.OpenCVLoader;
 
 /**
  * MainActivity for OpenCV Camera Stream Application
@@ -24,7 +28,9 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
     private static final String TAG = "MainActivity";
     
     private PermissionHandler permissionHandler;
+    private OpenCVProcessor openCVProcessor;
     private boolean isAppInForeground = false;
+    private boolean isOpenCVInitialized = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -36,7 +42,9 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         // Initialize permission handler with Android 10 compliance
         initializePermissionHandler();
         
-        // TODO: Initialize OpenCV with Android 10 compatibility (Task 3)
+        // Initialize OpenCV processor
+        initializeOpenCVProcessor();
+        
         // TODO: Set up Camera2 API with privacy controls (Task 4)
     }
     
@@ -50,12 +58,140 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         Log.d(TAG, "Permission handler initialized");
     }
     
+    /**
+     * Initialize OpenCV processor with Android 10 compatibility
+     * Requirement 5.1: Initialize OpenCV within 3 seconds
+     */
+    private void initializeOpenCVProcessor() {
+        Log.d(TAG, "Initializing OpenCV processor");
+        
+        // Create OpenCV processor with default configuration
+        OpenCVProcessor.ProcessingConfig config = new OpenCVProcessor.ProcessingConfig();
+        config.mode = OpenCVProcessor.ProcessingMode.GRAYSCALE;
+        config.enablePerformanceOptimization = true;
+        config.maxProcessingTimeMs = 50; // Requirement 2.3
+        
+        openCVProcessor = new OpenCVProcessor(config);
+        
+        // Set up processing callback
+        openCVProcessor.setProcessingCallback(new OpenCVProcessor.ProcessingCallback() {
+            @Override
+            public void onFrameProcessed(@NonNull org.opencv.core.Mat processedFrame, long processingTimeMs) {
+                Log.v(TAG, "Frame processed in " + processingTimeMs + "ms");
+                // TODO: Pass processed frame to display manager (Task 5)
+            }
+            
+            @Override
+            public void onProcessingError(@NonNull Exception error, @androidx.annotation.Nullable org.opencv.core.Mat originalFrame) {
+                Log.e(TAG, "OpenCV processing error", error);
+                // Requirement 4.3: Fall back to displaying unprocessed frames
+                Toast.makeText(MainActivity.this, "Processing error, showing original frame", Toast.LENGTH_SHORT).show();
+            }
+            
+            @Override
+            public void onProcessingTimeout(@NonNull org.opencv.core.Mat originalFrame, long timeoutMs) {
+                Log.w(TAG, "Processing timeout: " + timeoutMs + "ms");
+                // Continue with original frame
+            }
+        });
+        
+        Log.d(TAG, "OpenCV processor created, waiting for OpenCV library initialization");
+    }
+    
+    /**
+     * OpenCV loader callback for Android 10 compatibility
+     * Handles OpenCV library initialization
+     */
+    private final BaseLoaderCallback openCVLoaderCallback = new BaseLoaderCallback(this) {
+        @Override
+        public void onManagerConnected(int status) {
+            switch (status) {
+                case LoaderCallbackInterface.SUCCESS:
+                    Log.d(TAG, "OpenCV loaded successfully");
+                    
+                    // Initialize the processor
+                    if (openCVProcessor != null && openCVProcessor.initialize()) {
+                        isOpenCVInitialized = true;
+                        Log.i(TAG, "OpenCV processor initialized successfully");
+                        
+                        // Show success message
+                        runOnUiThread(() -> {
+                            Toast.makeText(MainActivity.this, "OpenCV initialized", Toast.LENGTH_SHORT).show();
+                        });
+                        
+                        // If camera permission is already granted, proceed with camera initialization
+                        if (permissionHandler != null && permissionHandler.isCameraPermissionGranted()) {
+                            initializeCameraComponents();
+                        }
+                    } else {
+                        Log.e(TAG, "Failed to initialize OpenCV processor");
+                        handleOpenCVInitializationFailure();
+                    }
+                    break;
+                    
+                case LoaderCallbackInterface.INIT_FAILED:
+                    Log.e(TAG, "OpenCV initialization failed");
+                    handleOpenCVInitializationFailure();
+                    break;
+                    
+                case LoaderCallbackInterface.INSTALL_CANCELED:
+                    Log.w(TAG, "OpenCV installation canceled");
+                    handleOpenCVInitializationFailure();
+                    break;
+                    
+                case LoaderCallbackInterface.INCOMPATIBLE_MANAGER_VERSION:
+                    Log.e(TAG, "Incompatible OpenCV Manager version");
+                    handleOpenCVInitializationFailure();
+                    break;
+                    
+                case LoaderCallbackInterface.MARKET_ERROR:
+                    Log.e(TAG, "OpenCV Market error");
+                    handleOpenCVInitializationFailure();
+                    break;
+                    
+                default:
+                    Log.e(TAG, "Unknown OpenCV loader status: " + status);
+                    handleOpenCVInitializationFailure();
+                    break;
+            }
+        }
+    };
+    
+    /**
+     * Handle OpenCV initialization failure
+     * Requirement 4.3: Display error message and fall back to unprocessed frames
+     */
+    private void handleOpenCVInitializationFailure() {
+        isOpenCVInitialized = false;
+        
+        runOnUiThread(() -> {
+            Toast.makeText(this, "OpenCV initialization failed. App will show unprocessed camera frames.", 
+                    Toast.LENGTH_LONG).show();
+        });
+        
+        Log.w(TAG, "OpenCV initialization failed, app will continue with limited functionality");
+        
+        // Continue with camera initialization even without OpenCV
+        if (permissionHandler != null && permissionHandler.isCameraPermissionGranted()) {
+            initializeCameraComponents();
+        }
+    }
+    
     @Override
     protected void onResume() {
         super.onResume();
         isAppInForeground = true;
         
-        Log.d(TAG, "Activity resumed, checking camera permissions");
+        Log.d(TAG, "Activity resumed, initializing OpenCV and checking camera permissions");
+        
+        // Initialize OpenCV when activity resumes
+        if (!OpenCVLoader.initDebug()) {
+            Log.d(TAG, "Internal OpenCV library not found. Using OpenCV Manager for initialization");
+            OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION, this, openCVLoaderCallback);
+        } else {
+            Log.d(TAG, "OpenCV library found inside package. Using it!");
+            openCVLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
+        }
         
         // Check and request camera permission when app comes to foreground
         // This handles Android 10 background activity restrictions
