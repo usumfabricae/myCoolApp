@@ -41,7 +41,8 @@ workflows:
     scripts:
       - name: Set up local.properties
         script: |
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/myCoolApp/local.properties"
+          cd $CM_BUILD_DIR/myCoolApp
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > "local.properties"
       
       - name: Get Android dependencies
         script: |
@@ -129,7 +130,8 @@ workflows:
     scripts:
       - name: Set up local.properties
         script: |
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/myCoolApp/local.properties"
+          cd $CM_BUILD_DIR/myCoolApp
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > "local.properties"
       
       - name: Get Android dependencies
         script: |
@@ -190,7 +192,8 @@ workflows:
     scripts:
       - name: Set up local.properties
         script: |
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/myCoolApp/local.properties"
+          cd $CM_BUILD_DIR/myCoolApp
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > "local.properties"
       
       - name: Run unit tests with coverage
         script: |
