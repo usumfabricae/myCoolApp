@@ -1,6 +1,5 @@
 definitions:
   env_versions: &env_versions
-    flutter: stable
     java: 11
     
 workflows:
@@ -11,12 +10,13 @@ workflows:
     environment:
       <<: *env_versions
       vars:
+        GRADLE_OPTS: -Xmx4g -Dorg.gradle.daemon=false
         # Android signing configuration (for release builds)
         # KEYSTORE: Encrypted(...)  # Add your keystore if needed
         # KEYSTORE_PASSWORD: Encrypted(...)
         # KEY_ALIAS: Encrypted(...)
         # KEY_PASSWORD: Encrypted(...)
-      groups:
+      # groups:
         # Add environment variable groups if needed
         # - keystore_credentials
     cache:
@@ -112,9 +112,9 @@ workflows:
     environment:
       <<: *env_versions
       vars:
-        # Add release-specific environment variables
         GRADLE_OPTS: -Xmx4g -Dorg.gradle.daemon=false
-      groups:
+        # Add release-specific environment variables
+      # groups:
         # - keystore_credentials  # Uncomment when you have signing setup
     cache:
       cache_paths:
