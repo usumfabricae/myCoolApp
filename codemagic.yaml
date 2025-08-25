@@ -44,29 +44,36 @@ workflows:
           echo "Build directory: $CM_BUILD_DIR"
           echo "Contents of build directory:"
           ls -la $CM_BUILD_DIR
-          echo "Checking for myCoolApp directory:"
-          if [ -d "$CM_BUILD_DIR/myCoolApp" ]; then
-            echo "✅ myCoolApp directory found"
-            ls -la $CM_BUILD_DIR/myCoolApp
+          echo "Checking for Android project files:"
+          if [ -f "$CM_BUILD_DIR/gradlew" ]; then
+            echo "✅ gradlew found"
           else
-            echo "❌ myCoolApp directory not found"
-            echo "Available directories:"
-            find $CM_BUILD_DIR -maxdepth 2 -type d
+            echo "❌ gradlew not found"
+          fi
+          if [ -f "$CM_BUILD_DIR/build.gradle" ]; then
+            echo "✅ build.gradle found"
+          else
+            echo "❌ build.gradle not found"
+          fi
+          if [ -d "$CM_BUILD_DIR/app" ]; then
+            echo "✅ app directory found"
+          else
+            echo "❌ app directory not found"
           fi
       
       - name: Set up local.properties
         script: |
-          cd $CM_BUILD_DIR/myCoolApp
+          cd $CM_BUILD_DIR
           echo "sdk.dir=$ANDROID_SDK_ROOT" > "local.properties"
       
       - name: Get Android dependencies
         script: |
-          cd $CM_BUILD_DIR/myCoolApp
+          cd $CM_BUILD_DIR
           ./gradlew dependencies
       
       - name: Set up OpenCV
         script: |
-          cd $CM_BUILD_DIR/myCoolApp
+          cd $CM_BUILD_DIR
           # Verify OpenCV module is properly configured
           if [ ! -d "opencv/src" ]; then
             echo "Warning: OpenCV module not found. This may cause build issues."
@@ -74,22 +81,22 @@ workflows:
       
       - name: Build debug APK
         script: |
-          cd $CM_BUILD_DIR/myCoolApp
+          cd $CM_BUILD_DIR
           ./gradlew assembleDebug
       
       - name: Run unit tests
         script: |
-          cd $CM_BUILD_DIR/myCoolApp
+          cd $CM_BUILD_DIR
           ./gradlew testDebugUnitTest
       
       - name: Run Android lint
         script: |
-          cd $CM_BUILD_DIR/myCoolApp
+          cd $CM_BUILD_DIR
           ./gradlew lintDebug
       
       - name: Generate test reports
         script: |
-          cd $CM_BUILD_DIR/myCoolApp
+          cd $CM_BUILD_DIR
           # Copy test results for artifacts
           mkdir -p test-results
           find . -name "TEST-*.xml" -exec cp {} test-results/ \;
@@ -100,12 +107,12 @@ workflows:
           find . -name "lint-results*.html" -exec cp {} lint-results/ \;
     
     artifacts:
-      - myCoolApp/app/build/outputs/**/*.apk
-      - myCoolApp/app/build/outputs/**/mapping.txt
-      - myCoolApp/app/build/reports/lint-results*.html
-      - myCoolApp/app/build/reports/tests/**/*
-      - myCoolApp/test-results/*.xml
-      - myCoolApp/lint-results/*
+      - app/build/outputs/**/*.apk
+      - app/build/outputs/**/mapping.txt
+      - app/build/reports/lint-results*.html
+      - app/build/reports/tests/**/*
+      - test-results/*.xml
+      - lint-results/*
     
     publishing:
       email:
@@ -145,30 +152,30 @@ workflows:
     scripts:
       - name: Set up local.properties
         script: |
-          cd $CM_BUILD_DIR/myCoolApp
+          cd $CM_BUILD_DIR
           echo "sdk.dir=$ANDROID_SDK_ROOT" > "local.properties"
       
       - name: Get Android dependencies
         script: |
-          cd $CM_BUILD_DIR/myCoolApp
+          cd $CM_BUILD_DIR
           ./gradlew dependencies
       
       - name: Run all tests
         script: |
-          cd $CM_BUILD_DIR/myCoolApp
+          cd $CM_BUILD_DIR
           ./gradlew testDebugUnitTest
           ./gradlew connectedAndroidTest || echo "No connected tests available"
       
       - name: Build release APK
         script: |
-          cd $CM_BUILD_DIR/myCoolApp
+          cd $CM_BUILD_DIR
           # For now, build unsigned release APK
           # When you have signing setup, use: ./gradlew assembleRelease
           ./gradlew assembleDebug
       
       - name: Generate release artifacts
         script: |
-          cd $CM_BUILD_DIR/myCoolApp
+          cd $CM_BUILD_DIR
           mkdir -p release-artifacts
           cp app/build/outputs/apk/debug/*.apk release-artifacts/
           
@@ -179,10 +186,10 @@ workflows:
           echo "Build Number: $CM_BUILD_ID" >> release-artifacts/build-info.txt
     
     artifacts:
-      - myCoolApp/release-artifacts/*.apk
-      - myCoolApp/release-artifacts/build-info.txt
-      - myCoolApp/app/build/outputs/**/mapping.txt
-      - myCoolApp/app/build/reports/**/*
+      - release-artifacts/*.apk
+      - release-artifacts/build-info.txt
+      - app/build/outputs/**/mapping.txt
+      - app/build/reports/**/*
     
     publishing:
       email:
@@ -207,22 +214,22 @@ workflows:
     scripts:
       - name: Set up local.properties
         script: |
-          cd $CM_BUILD_DIR/myCoolApp
+          cd $CM_BUILD_DIR
           echo "sdk.dir=$ANDROID_SDK_ROOT" > "local.properties"
       
       - name: Run unit tests with coverage
         script: |
-          cd $CM_BUILD_DIR/myCoolApp
+          cd $CM_BUILD_DIR
           ./gradlew testDebugUnitTest jacocoTestReport
       
       - name: Run lint checks
         script: |
-          cd $CM_BUILD_DIR/myCoolApp
+          cd $CM_BUILD_DIR
           ./gradlew lintDebug
       
       - name: Validate Android 10 compatibility
         script: |
-          cd $CM_BUILD_DIR/myCoolApp
+          cd $CM_BUILD_DIR
           # Check that target SDK is 29 (Android 10)
           if grep -q "targetSdk 29" app/build.gradle; then
             echo "✅ Target SDK 29 (Android 10) confirmed"
@@ -241,15 +248,15 @@ workflows:
       
       - name: Generate test coverage report
         script: |
-          cd $CM_BUILD_DIR/myCoolApp
+          cd $CM_BUILD_DIR
           mkdir -p coverage-reports
           find . -name "jacoco*.xml" -exec cp {} coverage-reports/ \;
           find . -name "jacoco*.html" -exec cp -r {} coverage-reports/ \;
     
     artifacts:
-      - myCoolApp/app/build/reports/tests/**/*
-      - myCoolApp/app/build/reports/lint-results*.html
-      - myCoolApp/coverage-reports/**/*
+      - app/build/reports/tests/**/*
+      - app/build/reports/lint-results*.html
+      - coverage-reports/**/*
     
     publishing:
       email:
