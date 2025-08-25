@@ -1,0 +1,163 @@
+package com.example.opencvcamerastream;
+
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import android.os.Bundle;
+import android.util.Log;
+import android.widget.Toast;
+import com.example.opencvcamerastream.permissions.PermissionHandler;
+
+/**
+ * MainActivity for OpenCV Camera Stream Application
+ * 
+ * This activity is designed for Android 10 (API 29) compatibility with enhanced
+ * privacy controls, background activity restrictions, and scoped storage compliance.
+ * 
+ * Key Android 10 Features Addressed:
+ * - Enhanced camera privacy controls
+ * - Background activity limitations
+ * - Scoped storage requirements
+ * - Runtime permission handling improvements
+ */
+public class MainActivity extends AppCompatActivity implements PermissionHandler.PermissionCallback {
+    
+    private static final String TAG = "MainActivity";
+    
+    private PermissionHandler permissionHandler;
+    private boolean isAppInForeground = false;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+        
+        Log.d(TAG, "MainActivity created");
+        
+        // Initialize permission handler with Android 10 compliance
+        initializePermissionHandler();
+        
+        // TODO: Initialize OpenCV with Android 10 compatibility (Task 3)
+        // TODO: Set up Camera2 API with privacy controls (Task 4)
+    }
+    
+    /**
+     * Initialize permission handler and set up callbacks
+     */
+    private void initializePermissionHandler() {
+        permissionHandler = new PermissionHandler(this);
+        permissionHandler.setPermissionCallback(this);
+        
+        Log.d(TAG, "Permission handler initialized");
+    }
+    
+    @Override
+    protected void onResume() {
+        super.onResume();
+        isAppInForeground = true;
+        
+        Log.d(TAG, "Activity resumed, checking camera permissions");
+        
+        // Check and request camera permission when app comes to foreground
+        // This handles Android 10 background activity restrictions
+        if (permissionHandler != null) {
+            permissionHandler.requestCameraPermission();
+        }
+    }
+    
+    @Override
+    protected void onPause() {
+        super.onPause();
+        isAppInForeground = false;
+        
+        Log.d(TAG, "Activity paused");
+        
+        // TODO: Properly release camera resources per Android 10 guidelines (Task 4)
+    }
+    
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, 
+                                         @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        
+        Log.d(TAG, "Permission result received for request code: " + requestCode);
+        
+        // Handle permission results through our permission handler
+        if (permissionHandler != null) {
+            permissionHandler.handlePermissionResult(requestCode, permissions, grantResults);
+        }
+    }
+    
+    // PermissionHandler.PermissionCallback implementation
+    
+    @Override
+    public void onPermissionGranted() {
+        Log.d(TAG, "Camera permission granted");
+        Toast.makeText(this, "Camera permission granted", Toast.LENGTH_SHORT).show();
+        
+        // Permission granted, proceed with camera initialization
+        initializeCameraComponents();
+    }
+    
+    @Override
+    public void onPermissionDenied(boolean isPermanentlyDenied) {
+        Log.w(TAG, "Camera permission denied. Permanently denied: " + isPermanentlyDenied);
+        
+        if (isPermanentlyDenied) {
+            Toast.makeText(this, "Camera permission permanently denied. Please enable in Settings.", 
+                    Toast.LENGTH_LONG).show();
+        } else {
+            Toast.makeText(this, "Camera permission denied. App cannot function without camera access.", 
+                    Toast.LENGTH_LONG).show();
+        }
+        
+        // Handle permission denial - app cannot function without camera
+        handlePermissionDenial(isPermanentlyDenied);
+    }
+    
+    @Override
+    public void onPermissionRationaleRequired() {
+        Log.d(TAG, "Permission rationale required");
+        // The permission handler will show the rationale dialog
+    }
+    
+    /**
+     * Initialize camera components after permission is granted
+     */
+    private void initializeCameraComponents() {
+        Log.d(TAG, "Initializing camera components");
+        
+        // TODO: This will be implemented in subsequent tasks
+        // - Initialize OpenCV (Task 3)
+        // - Set up Camera2 API (Task 4)
+        // - Initialize display system (Task 5)
+        
+        Toast.makeText(this, "Ready to initialize camera (pending implementation)", 
+                Toast.LENGTH_SHORT).show();
+    }
+    
+    /**
+     * Handle permission denial scenarios
+     */
+    private void handlePermissionDenial(boolean isPermanentlyDenied) {
+        // For now, we'll just log and show a message
+        // In a production app, you might want to:
+        // - Disable camera-related UI elements
+        // - Show alternative content
+        // - Guide user to settings if permanently denied
+        
+        Log.w(TAG, "Handling permission denial. App functionality limited.");
+        
+        if (isPermanentlyDenied) {
+            // Could show a persistent notification or different UI state
+            Log.w(TAG, "User needs to manually enable permission in Settings");
+        }
+    }
+    
+    /**
+     * Check if the app is currently in foreground
+     * Useful for Android 10 background activity restrictions
+     */
+    public boolean isAppInForeground() {
+        return isAppInForeground;
+    }
+}

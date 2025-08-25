@@ -1,0 +1,18 @@
+<resources>
+    <string name="app_name">OpenCV Camera Stream</string>
+    
+    <!-- Permission related strings -->
+    <string name="camera_permission_required">Camera Permission Required</string>
+    <string name="camera_permission_rationale">This app needs camera access to capture and process video frames in real-time. Camera access is essential for the core functionality of the application.</string>
+    <string name="camera_permission_denied">Camera permission was denied. The app cannot function without camera access. Please grant camera permission in Settings.</string>
+    <string name="camera_permission_permanently_denied">Camera permission was permanently denied. Please enable camera permission in Settings > Apps > %s > Permissions.</string>
+    <string name="grant_permission">Grant Permission</string>
+    <string name="go_to_settings">Go to Settings</string>
+    <string name="cancel">Cancel</string>
+    <string name="ok">OK</string>
+    <string name="retry">Retry</string>
+    
+    <!-- Android 10 privacy related strings -->
+    <string name="android_10_privacy_notice">Enhanced Privacy Controls</string>
+    <string name="android_10_camera_privacy_message">Android 10 provides enhanced camera privacy controls. You can manage camera access for this app in your device settings at any time.</string>
+</resources>

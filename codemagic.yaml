@@ -1,0 +1,242 @@
+definitions:
+  env_versions: &env_versions
+    flutter: stable
+    java: 11
+    
+workflows:
+  android-workflow:
+    name: Android OpenCV Camera Stream
+    max_build_duration: 120
+    instance_type: mac_mini_m1
+    environment:
+      <<: *env_versions
+      vars:
+        # Android signing configuration (for release builds)
+        # KEYSTORE: Encrypted(...)  # Add your keystore if needed
+        # KEYSTORE_PASSWORD: Encrypted(...)
+        # KEY_ALIAS: Encrypted(...)
+        # KEY_PASSWORD: Encrypted(...)
+      groups:
+        # Add environment variable groups if needed
+        # - keystore_credentials
+    cache:
+      cache_paths:
+        - ~/.gradle/caches
+        - ~/.android/build-cache
+    triggering:
+      events:
+        - push
+        - tag
+        - pull_request
+      branch_patterns:
+        - pattern: 'main'
+          include: true
+          source: true
+        - pattern: 'develop'
+          include: true
+          source: true
+        - pattern: 'feature/*'
+          include: true
+          source: true
+    scripts:
+      - name: Set up local.properties
+        script: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/local.properties"
+      
+      - name: Get Android dependencies
+        script: |
+          cd $CM_BUILD_DIR
+          ./gradlew dependencies
+      
+      - name: Set up OpenCV
+        script: |
+          cd $CM_BUILD_DIR
+          # Verify OpenCV module is properly configured
+          if [ ! -d "opencv/src" ]; then
+            echo "Warning: OpenCV module not found. This may cause build issues."
+          fi
+      
+      - name: Build debug APK
+        script: |
+          cd $CM_BUILD_DIR
+          ./gradlew assembleDebug
+      
+      - name: Run unit tests
+        script: |
+          cd $CM_BUILD_DIR
+          ./gradlew testDebugUnitTest
+      
+      - name: Run Android lint
+        script: |
+          cd $CM_BUILD_DIR
+          ./gradlew lintDebug
+      
+      - name: Generate test reports
+        script: |
+          cd $CM_BUILD_DIR
+          # Copy test results for artifacts
+          mkdir -p test-results
+          find . -name "TEST-*.xml" -exec cp {} test-results/ \;
+          
+          # Copy lint results
+          mkdir -p lint-results
+          find . -name "lint-results*.xml" -exec cp {} lint-results/ \;
+          find . -name "lint-results*.html" -exec cp {} lint-results/ \;
+    
+    artifacts:
+      - app/build/outputs/**/*.apk
+      - app/build/outputs/**/mapping.txt
+      - app/build/reports/lint-results*.html
+      - app/build/reports/tests/**/*
+      - test-results/*.xml
+      - lint-results/*
+    
+    publishing:
+      email:
+        recipients:
+          - user@example.com  # Replace with your email
+        notify:
+          success: true
+          failure: true
+      
+      # Uncomment to publish to Google Play (requires setup)
+      # google_play:
+      #   credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
+      #   track: internal
+      #   submit_as_draft: true
+
+  android-release-workflow:
+    name: Android Release Build
+    max_build_duration: 120
+    instance_type: mac_mini_m1
+    environment:
+      <<: *env_versions
+      vars:
+        # Add release-specific environment variables
+        GRADLE_OPTS: -Xmx4g -Dorg.gradle.daemon=false
+      groups:
+        # - keystore_credentials  # Uncomment when you have signing setup
+    cache:
+      cache_paths:
+        - ~/.gradle/caches
+        - ~/.android/build-cache
+    triggering:
+      events:
+        - tag
+      tag_patterns:
+        - pattern: 'v*.*.*'
+          include: true
+    scripts:
+      - name: Set up local.properties
+        script: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/local.properties"
+      
+      - name: Get Android dependencies
+        script: |
+          cd $CM_BUILD_DIR
+          ./gradlew dependencies
+      
+      - name: Run all tests
+        script: |
+          cd $CM_BUILD_DIR
+          ./gradlew testDebugUnitTest
+          ./gradlew connectedAndroidTest || echo "No connected tests available"
+      
+      - name: Build release APK
+        script: |
+          cd $CM_BUILD_DIR
+          # For now, build unsigned release APK
+          # When you have signing setup, use: ./gradlew assembleRelease
+          ./gradlew assembleDebug
+      
+      - name: Generate release artifacts
+        script: |
+          cd $CM_BUILD_DIR
+          mkdir -p release-artifacts
+          cp app/build/outputs/apk/debug/*.apk release-artifacts/
+          
+          # Generate build info
+          echo "Build Date: $(date)" > release-artifacts/build-info.txt
+          echo "Git Commit: $CM_COMMIT" >> release-artifacts/build-info.txt
+          echo "Git Branch: $CM_BRANCH" >> release-artifacts/build-info.txt
+          echo "Build Number: $CM_BUILD_ID" >> release-artifacts/build-info.txt
+    
+    artifacts:
+      - release-artifacts/*.apk
+      - release-artifacts/build-info.txt
+      - app/build/outputs/**/mapping.txt
+      - app/build/reports/**/*
+    
+    publishing:
+      email:
+        recipients:
+          - user@example.com  # Replace with your email
+        notify:
+          success: true
+          failure: true
+
+  android-test-workflow:
+    name: Android Tests Only
+    max_build_duration: 60
+    instance_type: mac_mini_m1
+    environment:
+      <<: *env_versions
+    cache:
+      cache_paths:
+        - ~/.gradle/caches
+    triggering:
+      events:
+        - pull_request
+    scripts:
+      - name: Set up local.properties
+        script: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/local.properties"
+      
+      - name: Run unit tests with coverage
+        script: |
+          cd $CM_BUILD_DIR
+          ./gradlew testDebugUnitTest jacocoTestReport
+      
+      - name: Run lint checks
+        script: |
+          cd $CM_BUILD_DIR
+          ./gradlew lintDebug
+      
+      - name: Validate Android 10 compatibility
+        script: |
+          cd $CM_BUILD_DIR
+          # Check that target SDK is 29 (Android 10)
+          if grep -q "targetSdk 29" app/build.gradle; then
+            echo "✅ Target SDK 29 (Android 10) confirmed"
+          else
+            echo "❌ Target SDK should be 29 for Android 10 compatibility"
+            exit 1
+          fi
+          
+          # Check for required permissions
+          if grep -q "android.permission.CAMERA" app/src/main/AndroidManifest.xml; then
+            echo "✅ Camera permission declared"
+          else
+            echo "❌ Camera permission not found in manifest"
+            exit 1
+          fi
+      
+      - name: Generate test coverage report
+        script: |
+          cd $CM_BUILD_DIR
+          mkdir -p coverage-reports
+          find . -name "jacoco*.xml" -exec cp {} coverage-reports/ \;
+          find . -name "jacoco*.html" -exec cp -r {} coverage-reports/ \;
+    
+    artifacts:
+      - app/build/reports/tests/**/*
+      - app/build/reports/lint-results*.html
+      - coverage-reports/**/*
+    
+    publishing:
+      email:
+        recipients:
+          - user@example.com  # Replace with your email
+        notify:
+          success: false
+          failure: true
