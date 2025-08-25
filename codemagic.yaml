@@ -39,6 +39,21 @@ workflows:
           include: true
           source: true
     scripts:
+      - name: Debug build environment
+        script: |
+          echo "Build directory: $CM_BUILD_DIR"
+          echo "Contents of build directory:"
+          ls -la $CM_BUILD_DIR
+          echo "Checking for myCoolApp directory:"
+          if [ -d "$CM_BUILD_DIR/myCoolApp" ]; then
+            echo "✅ myCoolApp directory found"
+            ls -la $CM_BUILD_DIR/myCoolApp
+          else
+            echo "❌ myCoolApp directory not found"
+            echo "Available directories:"
+            find $CM_BUILD_DIR -maxdepth 2 -type d
+          fi
+      
       - name: Set up local.properties
         script: |
           cd $CM_BUILD_DIR/myCoolApp
