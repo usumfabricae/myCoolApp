@@ -45,6 +45,9 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         // Initialize OpenCV processor
         initializeOpenCVProcessor();
         
+        // Initialize display manager
+        initializeDisplayManager();
+        
         // TODO: Set up Camera2 API with privacy controls (Task 4)
     }
     
@@ -78,7 +81,10 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             @Override
             public void onFrameProcessed(@NonNull org.opencv.core.Mat processedFrame, long processingTimeMs) {
                 Log.v(TAG, "Frame processed in " + processingTimeMs + "ms");
-                // TODO: Pass processed frame to display manager (Task 5)
+                // Pass processed frame to display manager
+                if (displayManager != null && displayManager.isDisplayReady()) {
+                    displayManager.updateFrame(processedFrame);
+                }
             }
             
             @Override
@@ -86,16 +92,78 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
                 Log.e(TAG, "OpenCV processing error", error);
                 // Requirement 4.3: Fall back to displaying unprocessed frames
                 Toast.makeText(MainActivity.this, "Processing error, showing original frame", Toast.LENGTH_SHORT).show();
+                
+                // Display original frame if available
+                if (originalFrame != null && displayManager != null && displayManager.isDisplayReady()) {
+                    displayManager.updateFrame(originalFrame);
+                }
             }
             
             @Override
             public void onProcessingTimeout(@NonNull org.opencv.core.Mat originalFrame, long timeoutMs) {
                 Log.w(TAG, "Processing timeout: " + timeoutMs + "ms");
                 // Continue with original frame
+                if (displayManager != null && displayManager.isDisplayReady()) {
+                    displayManager.updateFrame(originalFrame);
+                }
             }
         });
         
         Log.d(TAG, "OpenCV processor created, waiting for OpenCV library initialization");
+    }
+    
+    /**
+     * Initialize display manager with TextureView
+     * Requirement 3.1: Display processed frames on screen
+     */
+    private void initializeDisplayManager() {
+        Log.d(TAG, "Initializing display manager");
+        
+        displayManager = new com.example.opencvcamerastream.display.DisplayManager(this);
+        
+        // Set up display callback
+        displayManager.setDisplayCallback(new com.example.opencvcamerastream.display.DisplayManager.DisplayCallback() {
+            @Override
+            public void onDisplayReady() {
+                Log.d(TAG, "Display ready for rendering");
+                runOnUiThread(() -> {
+                    Toast.makeText(MainActivity.this, "Display ready", Toast.LENGTH_SHORT).show();
+                });
+            }
+            
+            @Override
+            public void onDisplayDestroyed() {
+                Log.d(TAG, "Display destroyed");
+            }
+            
+            @Override
+            public void onFrameUpdateError(@NonNull Exception error) {
+                Log.e(TAG, "Frame update error", error);
+                runOnUiThread(() -> {
+                    Toast.makeText(MainActivity.this, "Display error: " + error.getMessage(), Toast.LENGTH_SHORT).show();
+                });
+            }
+            
+            @Override
+            public void onPerformanceUpdate(float fps, float avgUpdateTime) {
+                Log.v(TAG, "Display performance - FPS: " + String.format("%.1f", fps) + 
+                        ", Avg update time: " + String.format("%.1f", avgUpdateTime) + "ms");
+            }
+        });
+        
+        // Set up TextureView
+        android.view.TextureView textureView = findViewById(R.id.textureView);
+        if (textureView != null) {
+            if (displayManager.setupDisplay(textureView)) {
+                Log.i(TAG, "Display manager initialized successfully");
+            } else {
+                Log.e(TAG, "Failed to initialize display manager");
+                Toast.makeText(this, "Failed to initialize display", Toast.LENGTH_LONG).show();
+            }
+        } else {
+            Log.e(TAG, "TextureView not found in layout");
+            Toast.makeText(this, "Display setup error", Toast.LENGTH_LONG).show();
+        }
     }
     
     /**
@@ -240,6 +308,12 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             openCVProcessor = null;
         }
         
+        // Release display manager resources
+        if (displayManager != null) {
+            displayManager.release();
+            displayManager = null;
+        }
+        
         Log.d(TAG, "All resources released");
     }
     
@@ -291,6 +365,9 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
     
     // Camera components
     private com.example.opencvcamerastream.camera.CameraManager cameraManager;
+    
+    // Display components
+    private com.example.opencvcamerastream.display.DisplayManager displayManager;
     
     /**
      * Initialize camera components after permission is granted
