@@ -198,6 +198,14 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         if (permissionHandler != null) {
             permissionHandler.requestCameraPermission();
         }
+        
+        // Restart camera preview if it was stopped and we have permissions
+        if (cameraManager != null && cameraManager.isInitialized() && 
+            !cameraManager.isPreviewActive() && permissionHandler != null && 
+            permissionHandler.isCameraPermissionGranted()) {
+            Log.d(TAG, "Restarting camera preview on resume");
+            cameraManager.startPreview();
+        }
     }
     
     @Override
@@ -207,7 +215,32 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         
         Log.d(TAG, "Activity paused");
         
-        // TODO: Properly release camera resources per Android 10 guidelines (Task 4)
+        // Requirement 5.4: Properly release camera resources when app is backgrounded
+        if (cameraManager != null) {
+            Log.d(TAG, "Stopping camera preview due to app backgrounding");
+            cameraManager.stopPreview();
+        }
+    }
+    
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        
+        Log.d(TAG, "Activity destroyed, releasing all resources");
+        
+        // Release camera resources completely
+        if (cameraManager != null) {
+            cameraManager.release();
+            cameraManager = null;
+        }
+        
+        // Release OpenCV processor resources
+        if (openCVProcessor != null) {
+            openCVProcessor.release();
+            openCVProcessor = null;
+        }
+        
+        Log.d(TAG, "All resources released");
     }
     
     @Override
@@ -256,19 +289,124 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         // The permission handler will show the rationale dialog
     }
     
+    // Camera components
+    private com.example.opencvcamerastream.camera.CameraManager cameraManager;
+    
     /**
      * Initialize camera components after permission is granted
      */
     private void initializeCameraComponents() {
         Log.d(TAG, "Initializing camera components");
         
-        // TODO: This will be implemented in subsequent tasks
-        // - Initialize OpenCV (Task 3)
-        // - Set up Camera2 API (Task 4)
-        // - Initialize display system (Task 5)
+        if (cameraManager == null) {
+            // Initialize camera manager
+            cameraManager = new com.example.opencvcamerastream.camera.CameraManager(this);
+            
+            // Set up camera callbacks
+            cameraManager.setCameraCallback(new com.example.opencvcamerastream.camera.CameraManager.CameraCallback() {
+                @Override
+                public void onCameraOpened() {
+                    Log.d(TAG, "Camera opened successfully");
+                    runOnUiThread(() -> {
+                        Toast.makeText(MainActivity.this, "Camera ready", Toast.LENGTH_SHORT).show();
+                    });
+                }
+                
+                @Override
+                public void onCameraClosed() {
+                    Log.d(TAG, "Camera closed");
+                }
+                
+                @Override
+                public void onCameraError(int error, String message) {
+                    Log.e(TAG, "Camera error: " + error + ", message: " + message);
+                    runOnUiThread(() -> {
+                        Toast.makeText(MainActivity.this, "Camera error: " + message, Toast.LENGTH_LONG).show();
+                    });
+                    
+                    // Requirement 4.2: Attempt to reconnect automatically
+                    if (isAppInForeground && permissionHandler != null && 
+                        permissionHandler.isCameraPermissionGranted()) {
+                        Log.d(TAG, "Attempting to reconnect camera in 2 seconds");
+                        new android.os.Handler().postDelayed(() -> {
+                            if (isAppInForeground) {
+                                attemptCameraReconnection();
+                            }
+                        }, 2000);
+                    }
+                }
+                
+                @Override
+                public void onCameraDisconnected() {
+                    Log.w(TAG, "Camera disconnected");
+                    runOnUiThread(() -> {
+                        Toast.makeText(MainActivity.this, "Camera disconnected", Toast.LENGTH_SHORT).show();
+                    });
+                    
+                    // Requirement 4.2: Attempt to reconnect automatically
+                    if (isAppInForeground && permissionHandler != null && 
+                        permissionHandler.isCameraPermissionGranted()) {
+                        Log.d(TAG, "Attempting to reconnect camera after disconnection");
+                        attemptCameraReconnection();
+                    }
+                }
+            });
+            
+            // Set up frame callback for OpenCV processing
+            cameraManager.setFrameCallback(new com.example.opencvcamerastream.camera.CameraManager.FrameCallback() {
+                @Override
+                public void onFrameAvailable(@androidx.annotation.NonNull android.media.Image frame) {
+                    // Process frame with OpenCV if initialized
+                    if (isOpenCVInitialized && openCVProcessor != null) {
+                        // TODO: Convert Image to Mat and process (will be implemented in task 6)
+                        Log.v(TAG, "Frame available for processing: " + frame.getWidth() + "x" + frame.getHeight());
+                    } else {
+                        Log.v(TAG, "Frame available but OpenCV not ready");
+                    }
+                }
+            });
+        }
         
-        Toast.makeText(this, "Ready to initialize camera (pending implementation)", 
-                Toast.LENGTH_SHORT).show();
+        // Initialize camera
+        if (cameraManager.initializeCamera()) {
+            Log.d(TAG, "Camera initialized, starting preview");
+            if (cameraManager.startPreview()) {
+                Log.i(TAG, "Camera preview started successfully");
+            } else {
+                Log.e(TAG, "Failed to start camera preview");
+                Toast.makeText(this, "Failed to start camera preview", Toast.LENGTH_LONG).show();
+            }
+        } else {
+            Log.e(TAG, "Failed to initialize camera");
+            Toast.makeText(this, "Failed to initialize camera", Toast.LENGTH_LONG).show();
+        }
+    }
+    
+    /**
+     * Attempt to reconnect camera after error or disconnection
+     * Requirement 4.2: Attempt to reconnect automatically when camera becomes unavailable
+     */
+    private void attemptCameraReconnection() {
+        Log.d(TAG, "Attempting camera reconnection");
+        
+        if (cameraManager != null) {
+            // Release current resources
+            cameraManager.release();
+            
+            // Reinitialize
+            if (cameraManager.initializeCamera()) {
+                if (cameraManager.startPreview()) {
+                    Log.i(TAG, "Camera reconnected successfully");
+                    runOnUiThread(() -> {
+                        Toast.makeText(MainActivity.this, "Camera reconnected", Toast.LENGTH_SHORT).show();
+                    });
+                } else {
+                    Log.w(TAG, "Camera reconnection failed at preview start");
+                }
+            } else {
+                Log.w(TAG, "Camera reconnection failed at initialization");
+            }
+        }
     }
     
     /**
