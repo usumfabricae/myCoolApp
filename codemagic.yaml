@@ -41,39 +41,74 @@ workflows:
     scripts:
       - name: Debug build environment
         script: |
+          echo "=== COMPREHENSIVE DEBUG INFO ==="
           echo "Build directory: $CM_BUILD_DIR"
-          echo "Contents of build directory:"
+          echo "Current working directory: $(pwd)"
+          echo ""
+          echo "=== CONTENTS OF BUILD DIRECTORY ==="
           ls -la $CM_BUILD_DIR
-          echo "Checking for myCoolApp directory:"
-          if [ -d "$CM_BUILD_DIR/myCoolApp" ]; then
-            echo "✅ myCoolApp directory found"
-            echo "Contents of myCoolApp directory:"
-            ls -la $CM_BUILD_DIR/myCoolApp
-            echo "Checking for Android project files in myCoolApp:"
-            if [ -f "$CM_BUILD_DIR/myCoolApp/gradlew" ]; then
-              echo "✅ gradlew found in myCoolApp"
+          echo ""
+          echo "=== SEARCHING FOR GRADLEW FILES ==="
+          find $CM_BUILD_DIR -name "gradlew" -type f 2>/dev/null || echo "No gradlew files found"
+          echo ""
+          echo "=== SEARCHING FOR BUILD.GRADLE FILES ==="
+          find $CM_BUILD_DIR -name "build.gradle" -type f 2>/dev/null || echo "No build.gradle files found"
+          echo ""
+          echo "=== DIRECTORY TREE (max depth 3) ==="
+          find $CM_BUILD_DIR -maxdepth 3 -type d | head -20
+          echo ""
+          echo "=== CHECKING SPECIFIC PATHS ==="
+          for path in "$CM_BUILD_DIR/myCoolApp" "$CM_BUILD_DIR/app" "$CM_BUILD_DIR"; do
+            echo "Checking path: $path"
+            if [ -d "$path" ]; then
+              echo "  ✅ Directory exists"
+              if [ -f "$path/gradlew" ]; then
+                echo "  ✅ gradlew found at $path/gradlew"
+              else
+                echo "  ❌ gradlew not found at $path/gradlew"
+              fi
             else
-              echo "❌ gradlew not found in myCoolApp"
+              echo "  ❌ Directory does not exist"
             fi
-          else
-            echo "❌ myCoolApp directory not found"
-            echo "Available directories:"
-            find $CM_BUILD_DIR -maxdepth 2 -type d
-          fi
+          done
       
-      - name: Set up local.properties
+      - name: Find and setup Android project
         script: |
-          cd $CM_BUILD_DIR/myCoolApp
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > "local.properties"
+          echo "=== FINDING ANDROID PROJECT DIRECTORY ==="
+          GRADLEW_PATH=$(find $CM_BUILD_DIR -name "gradlew" -type f | head -1)
+          if [ -n "$GRADLEW_PATH" ]; then
+            ANDROID_PROJECT_DIR=$(dirname "$GRADLEW_PATH")
+            echo "✅ Found gradlew at: $GRADLEW_PATH"
+            echo "✅ Android project directory: $ANDROID_PROJECT_DIR"
+            
+            # Export for use in subsequent steps
+            echo "export ANDROID_PROJECT_DIR='$ANDROID_PROJECT_DIR'" >> $CM_BUILD_DIR/android_env.sh
+            
+            # Set up local.properties
+            cd "$ANDROID_PROJECT_DIR"
+            echo "sdk.dir=$ANDROID_SDK_ROOT" > "local.properties"
+            echo "✅ Created local.properties in $ANDROID_PROJECT_DIR"
+            
+            # Verify setup
+            echo "Contents of Android project directory:"
+            ls -la "$ANDROID_PROJECT_DIR"
+          else
+            echo "❌ Could not find gradlew file anywhere in the repository"
+            echo "Repository structure:"
+            find $CM_BUILD_DIR -type f -name "*.gradle" | head -10
+            exit 1
+          fi
       
       - name: Get Android dependencies
         script: |
-          cd $CM_BUILD_DIR/myCoolApp
+          source $CM_BUILD_DIR/android_env.sh
+          cd "$ANDROID_PROJECT_DIR"
           ./gradlew dependencies
       
       - name: Set up OpenCV
         script: |
-          cd $CM_BUILD_DIR/myCoolApp
+          source $CM_BUILD_DIR/android_env.sh
+          cd "$ANDROID_PROJECT_DIR"
           # Verify OpenCV module is properly configured
           if [ ! -d "opencv/src" ]; then
             echo "Warning: OpenCV module not found. This may cause build issues."
@@ -81,22 +116,26 @@ workflows:
       
       - name: Build debug APK
         script: |
-          cd $CM_BUILD_DIR/myCoolApp
+          source $CM_BUILD_DIR/android_env.sh
+          cd "$ANDROID_PROJECT_DIR"
           ./gradlew assembleDebug
       
       - name: Run unit tests
         script: |
-          cd $CM_BUILD_DIR/myCoolApp
+          source $CM_BUILD_DIR/android_env.sh
+          cd "$ANDROID_PROJECT_DIR"
           ./gradlew testDebugUnitTest
       
       - name: Run Android lint
         script: |
-          cd $CM_BUILD_DIR/myCoolApp
+          source $CM_BUILD_DIR/android_env.sh
+          cd "$ANDROID_PROJECT_DIR"
           ./gradlew lintDebug
       
       - name: Generate test reports
         script: |
-          cd $CM_BUILD_DIR/myCoolApp
+          source $CM_BUILD_DIR/android_env.sh
+          cd "$ANDROID_PROJECT_DIR"
           # Copy test results for artifacts
           mkdir -p test-results
           find . -name "TEST-*.xml" -exec cp {} test-results/ \;
