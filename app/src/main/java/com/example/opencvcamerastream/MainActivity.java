@@ -7,6 +7,7 @@ import android.util.Log;
 import android.widget.Toast;
 import com.example.opencvcamerastream.permissions.PermissionHandler;
 import com.example.opencvcamerastream.processing.OpenCVProcessor;
+import com.example.opencvcamerastream.processing.FrameProcessor;
 import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
@@ -76,36 +77,62 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         
         openCVProcessor = new OpenCVProcessor(config);
         
-        // Set up processing callback
-        openCVProcessor.setProcessingCallback(new OpenCVProcessor.ProcessingCallback() {
+        // Create frame processor for camera-to-display pipeline integration
+        frameProcessor = new com.example.opencvcamerastream.processing.FrameProcessor(openCVProcessor);
+        
+        // Set up frame processor callback to handle processed frames
+        frameProcessor.setProcessingCallback(new com.example.opencvcamerastream.processing.FrameProcessor.ProcessingCallback() {
             @Override
-            public void onFrameProcessed(@NonNull org.opencv.core.Mat processedFrame, long processingTimeMs) {
+            public void onFrameProcessed(@NonNull org.opencv.core.Mat processedFrame, @NonNull android.media.Image originalImage, long processingTimeMs) {
                 Log.v(TAG, "Frame processed in " + processingTimeMs + "ms");
-                // Pass processed frame to display manager
-                if (displayManager != null && displayManager.isDisplayReady()) {
-                    displayManager.updateFrame(processedFrame);
-                }
-            }
-            
-            @Override
-            public void onProcessingError(@NonNull Exception error, @androidx.annotation.Nullable org.opencv.core.Mat originalFrame) {
-                Log.e(TAG, "OpenCV processing error", error);
-                // Requirement 4.3: Fall back to displaying unprocessed frames
-                Toast.makeText(MainActivity.this, "Processing error, showing original frame", Toast.LENGTH_SHORT).show();
                 
-                // Display original frame if available
-                if (originalFrame != null && displayManager != null && displayManager.isDisplayReady()) {
-                    displayManager.updateFrame(originalFrame);
+                // Display processed frame on UI thread
+                runOnUiThread(() -> {
+                    if (displayManager != null && displayManager.isDisplayReady()) {
+                        displayManager.updateFrame(processedFrame);
+                    }
+                });
+                
+                // Clean up resources
+                processedFrame.release();
+                originalImage.close();
+            }
+            
+            @Override
+            public void onProcessingFailed(@NonNull Exception error, @androidx.annotation.Nullable android.media.Image originalImage) {
+                Log.e(TAG, "Frame processing failed", error);
+                
+                // Requirement 4.3: Fall back to displaying unprocessed frames
+                runOnUiThread(() -> {
+                    Toast.makeText(MainActivity.this, "Processing error, showing original frame", Toast.LENGTH_SHORT).show();
+                });
+                
+                // Try to convert original image to Mat and display it
+                if (originalImage != null) {
+                    try {
+                        org.opencv.core.Mat originalMat = com.example.opencvcamerastream.processing.OpenCVProcessor.imageToMat(originalImage);
+                        
+                        runOnUiThread(() -> {
+                            if (displayManager != null && displayManager.isDisplayReady()) {
+                                displayManager.updateFrame(originalMat);
+                            }
+                        });
+                        
+                        originalMat.release();
+                    } catch (Exception e) {
+                        Log.e(TAG, "Failed to convert original image for display", e);
+                    } finally {
+                        originalImage.close();
+                    }
+                } else if (originalImage != null) {
+                    originalImage.close();
                 }
             }
             
             @Override
-            public void onProcessingTimeout(@NonNull org.opencv.core.Mat originalFrame, long timeoutMs) {
-                Log.w(TAG, "Processing timeout: " + timeoutMs + "ms");
-                // Continue with original frame
-                if (displayManager != null && displayManager.isDisplayReady()) {
-                    displayManager.updateFrame(originalFrame);
-                }
+            public void onFrameDropped(@NonNull android.media.Image droppedImage) {
+                Log.v(TAG, "Frame dropped due to queue overflow");
+                droppedImage.close();
             }
         });
         
@@ -187,6 +214,13 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
                             Toast.makeText(MainActivity.this, "OpenCV initialized", Toast.LENGTH_SHORT).show();
                         });
                         
+                        // Start frame processor
+                        if (frameProcessor != null && frameProcessor.start()) {
+                            Log.d(TAG, "Frame processor started successfully");
+                        } else {
+                            Log.e(TAG, "Failed to start frame processor");
+                        }
+                        
                         // If camera permission is already granted, proceed with camera initialization
                         if (permissionHandler != null && permissionHandler.isCameraPermissionGranted()) {
                             initializeCameraComponents();
@@ -267,6 +301,12 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             permissionHandler.requestCameraPermission();
         }
         
+        // Restart frame processor if OpenCV is initialized
+        if (isOpenCVInitialized && frameProcessor != null && !frameProcessor.isProcessing()) {
+            Log.d(TAG, "Restarting frame processor on resume");
+            frameProcessor.start();
+        }
+        
         // Restart camera preview if it was stopped and we have permissions
         if (cameraManager != null && cameraManager.isInitialized() && 
             !cameraManager.isPreviewActive() && permissionHandler != null && 
@@ -288,33 +328,12 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             Log.d(TAG, "Stopping camera preview due to app backgrounding");
             cameraManager.stopPreview();
         }
-    }
-    
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
         
-        Log.d(TAG, "Activity destroyed, releasing all resources");
-        
-        // Release camera resources completely
-        if (cameraManager != null) {
-            cameraManager.release();
-            cameraManager = null;
+        // Stop frame processor to save resources
+        if (frameProcessor != null && frameProcessor.isProcessing()) {
+            Log.d(TAG, "Stopping frame processor due to app backgrounding");
+            frameProcessor.stop();
         }
-        
-        // Release OpenCV processor resources
-        if (openCVProcessor != null) {
-            openCVProcessor.release();
-            openCVProcessor = null;
-        }
-        
-        // Release display manager resources
-        if (displayManager != null) {
-            displayManager.release();
-            displayManager = null;
-        }
-        
-        Log.d(TAG, "All resources released");
     }
     
     @Override
@@ -368,6 +387,9 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
     
     // Display components
     private com.example.opencvcamerastream.display.DisplayManager displayManager;
+    
+    // Frame processing pipeline
+    private com.example.opencvcamerastream.processing.FrameProcessor frameProcessor;
     
     /**
      * Initialize camera components after permission is granted
@@ -434,11 +456,10 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
                 @Override
                 public void onFrameAvailable(@androidx.annotation.NonNull android.media.Image frame) {
                     // Process frame with OpenCV if initialized
-                    if (isOpenCVInitialized && openCVProcessor != null) {
-                        // TODO: Convert Image to Mat and process (will be implemented in task 6)
-                        Log.v(TAG, "Frame available for processing: " + frame.getWidth() + "x" + frame.getHeight());
+                    if (isOpenCVInitialized && openCVProcessor != null && frameProcessor != null) {
+                        frameProcessor.processFrameAsync(frame);
                     } else {
-                        Log.v(TAG, "Frame available but OpenCV not ready");
+                        Log.v(TAG, "Frame available but processing pipeline not ready");
                     }
                 }
             });
@@ -514,6 +535,12 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         if (cameraManager != null) {
             cameraManager.release();
             cameraManager = null;
+        }
+        
+        // Stop and release frame processor
+        if (frameProcessor != null) {
+            frameProcessor.stop();
+            frameProcessor = null;
         }
         
         // Release OpenCV processor resources
