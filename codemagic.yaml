@@ -75,10 +75,12 @@ workflows:
       - name: Find and setup Android project
         script: |
           echo "=== FINDING ANDROID PROJECT DIRECTORY ==="
-          GRADLEW_PATH=$(find $CM_BUILD_DIR -name "gradlew" -type f | head -1)
-          if [ -n "$GRADLEW_PATH" ]; then
-            ANDROID_PROJECT_DIR=$(dirname "$GRADLEW_PATH")
-            echo "✅ Found gradlew at: $GRADLEW_PATH"
+          
+          # Look for build.gradle to identify Android project directory
+          BUILD_GRADLE_PATH=$(find $CM_BUILD_DIR -name "build.gradle" -type f | grep -v "/app/build.gradle" | head -1)
+          if [ -n "$BUILD_GRADLE_PATH" ]; then
+            ANDROID_PROJECT_DIR=$(dirname "$BUILD_GRADLE_PATH")
+            echo "✅ Found build.gradle at: $BUILD_GRADLE_PATH"
             echo "✅ Android project directory: $ANDROID_PROJECT_DIR"
             
             # Export for use in subsequent steps
@@ -89,11 +91,36 @@ workflows:
             echo "sdk.dir=$ANDROID_SDK_ROOT" > "local.properties"
             echo "✅ Created local.properties in $ANDROID_PROJECT_DIR"
             
+            # Set up Gradle wrapper
+            if [ -f "scripts/setup-gradle-wrapper.sh" ]; then
+              echo "Setting up Gradle wrapper..."
+              chmod +x scripts/setup-gradle-wrapper.sh
+              ./scripts/setup-gradle-wrapper.sh
+            fi
+            
+            # Check for gradlew and make it executable if it exists
+            if [ -f "$ANDROID_PROJECT_DIR/gradlew" ]; then
+              chmod +x "$ANDROID_PROJECT_DIR/gradlew"
+              echo "✅ Made gradlew executable"
+              
+              # Test if gradlew works
+              if ./gradlew --version >/dev/null 2>&1; then
+                echo "✅ gradlew is working"
+                echo "export USE_GRADLEW=true" >> $CM_BUILD_DIR/android_env.sh
+              else
+                echo "⚠️  gradlew exists but not working, will use system gradle"
+                echo "export USE_GRADLEW=false" >> $CM_BUILD_DIR/android_env.sh
+              fi
+            else
+              echo "⚠️  gradlew not found, will use system gradle"
+              echo "export USE_GRADLEW=false" >> $CM_BUILD_DIR/android_env.sh
+            fi
+            
             # Verify setup
             echo "Contents of Android project directory:"
             ls -la "$ANDROID_PROJECT_DIR"
           else
-            echo "❌ Could not find gradlew file anywhere in the repository"
+            echo "❌ Could not find build.gradle file anywhere in the repository"
             echo "Repository structure:"
             find $CM_BUILD_DIR -type f -name "*.gradle" | head -10
             exit 1
@@ -103,7 +130,11 @@ workflows:
         script: |
           source $CM_BUILD_DIR/android_env.sh
           cd "$ANDROID_PROJECT_DIR"
-          ./gradlew dependencies
+          if [ "$USE_GRADLEW" = "true" ]; then
+            ./gradlew dependencies
+          else
+            gradle dependencies
+          fi
       
       - name: Set up OpenCV
         script: |
@@ -118,19 +149,31 @@ workflows:
         script: |
           source $CM_BUILD_DIR/android_env.sh
           cd "$ANDROID_PROJECT_DIR"
-          ./gradlew assembleDebug
+          if [ "$USE_GRADLEW" = "true" ]; then
+            ./gradlew assembleDebug
+          else
+            gradle assembleDebug
+          fi
       
       - name: Run unit tests
         script: |
           source $CM_BUILD_DIR/android_env.sh
           cd "$ANDROID_PROJECT_DIR"
-          ./gradlew testDebugUnitTest
+          if [ "$USE_GRADLEW" = "true" ]; then
+            ./gradlew testDebugUnitTest
+          else
+            gradle testDebugUnitTest
+          fi
       
       - name: Run Android lint
         script: |
           source $CM_BUILD_DIR/android_env.sh
           cd "$ANDROID_PROJECT_DIR"
-          ./gradlew lintDebug
+          if [ "$USE_GRADLEW" = "true" ]; then
+            ./gradlew lintDebug
+          else
+            gradle lintDebug
+          fi
       
       - name: Generate test reports
         script: |
