@@ -504,6 +504,33 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         }
     }
     
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        
+        Log.d(TAG, "Activity destroyed, releasing all resources");
+        
+        // Release camera resources completely
+        if (cameraManager != null) {
+            cameraManager.release();
+            cameraManager = null;
+        }
+        
+        // Release OpenCV processor resources
+        if (openCVProcessor != null) {
+            openCVProcessor.release();
+            openCVProcessor = null;
+        }
+        
+        // Release display manager resources
+        if (displayManager != null) {
+            displayManager.release();
+            displayManager = null;
+        }
+        
+        Log.d(TAG, "All resources released");
+    }
+    
     /**
      * Check if the app is currently in foreground
      * Useful for Android 10 background activity restrictions
