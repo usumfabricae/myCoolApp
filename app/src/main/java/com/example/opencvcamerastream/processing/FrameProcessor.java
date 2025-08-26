@@ -36,6 +36,7 @@ public class FrameProcessor {
     
     // Processing components
     private final OpenCVProcessor openCVProcessor;
+    private final FrameBuffer frameBuffer;
     private ProcessingCallback processingCallback;
     
     // Threading and queue management
@@ -97,7 +98,19 @@ public class FrameProcessor {
      */
     public FrameProcessor(@NonNull OpenCVProcessor openCVProcessor) {
         this.openCVProcessor = openCVProcessor;
-        Log.d(TAG, "FrameProcessor created");
+        this.frameBuffer = new FrameBuffer();
+        Log.d(TAG, "FrameProcessor created with FrameBuffer");
+    }
+    
+    /**
+     * Constructor with custom FrameBuffer configuration
+     * @param openCVProcessor The OpenCV processor to use for frame processing
+     * @param frameBuffer Custom FrameBuffer instance
+     */
+    public FrameProcessor(@NonNull OpenCVProcessor openCVProcessor, @NonNull FrameBuffer frameBuffer) {
+        this.openCVProcessor = openCVProcessor;
+        this.frameBuffer = frameBuffer;
+        Log.d(TAG, "FrameProcessor created with custom FrameBuffer");
     }
     
     /**
@@ -173,8 +186,12 @@ public class FrameProcessor {
             }
         }
         
+        // Clear frame buffer and release resources
+        frameBuffer.clear();
+        
         // Log final performance metrics
         logPerformanceMetrics(true);
+        frameBuffer.logStatus();
         
         Log.i(TAG, "Frame processing pipeline stopped");
     }
@@ -254,12 +271,14 @@ public class FrameProcessor {
     private void processFrameInternal(@NonNull FrameData frameData) {
         Image image = frameData.image;
         long startTime = System.currentTimeMillis();
+        FrameBuffer.PooledMat inputBuffer = null;
+        FrameBuffer.PooledMat outputBuffer = null;
         
         try {
-            // Convert Image to Mat
-            Mat inputMat = OpenCVProcessor.imageToMat(image);
+            // Convert Image to Mat using temporary buffer
+            Mat tempMat = OpenCVProcessor.imageToMat(image);
             
-            if (inputMat.empty()) {
+            if (tempMat.empty()) {
                 Log.w(TAG, "Converted Mat is empty, skipping frame");
                 if (processingCallback != null) {
                     processingCallback.onProcessingFailed(
@@ -267,9 +286,83 @@ public class FrameProcessor {
                 } else {
                     image.close();
                 }
+                tempMat.release();
                 return;
             }
             
+            // Acquire buffer for input Mat
+            inputBuffer = frameBuffer.acquireBuffer(tempMat.rows(), tempMat.cols(), tempMat.type());
+            if (inputBuffer == null) {
+                Log.w(TAG, "Failed to acquire input buffer, using temporary Mat");
+                // Fall back to direct processing without pooling
+                processWithoutPooling(tempMat, image, startTime);
+                return;
+            }
+            
+            // Copy data to pooled buffer
+            tempMat.copyTo(inputBuffer.getMat());
+            tempMat.release(); // Release temporary Mat
+            
+            // Process the frame with OpenCV
+            Mat processedMat = openCVProcessor.processFrame(inputBuffer.getMat());
+            
+            if (processedMat == null || processedMat.empty()) {
+                Log.w(TAG, "Processed Mat is null or empty, using original");
+                processedMat = inputBuffer.getMat().clone();
+            }
+            
+            // Acquire buffer for output if different from input
+            if (processedMat != inputBuffer.getMat()) {
+                outputBuffer = frameBuffer.acquireBuffer(processedMat.rows(), processedMat.cols(), processedMat.type());
+                if (outputBuffer != null) {
+                    processedMat.copyTo(outputBuffer.getMat());
+                    processedMat.release(); // Release temporary processed Mat
+                    processedMat = outputBuffer.getMat();
+                }
+            } else {
+                // Processed Mat is the same as input Mat (in-place processing)
+                outputBuffer = inputBuffer;
+                inputBuffer = null; // Prevent double recycling
+            }
+            
+            long processingTime = System.currentTimeMillis() - startTime;
+            totalFramesProcessed++;
+            
+            Log.v(TAG, "Frame processed successfully in " + processingTime + "ms (with pooling)");
+            
+            // Notify callback with processed frame
+            if (processingCallback != null) {
+                // Create a copy for the callback since we need to recycle the buffer
+                Mat callbackMat = processedMat.clone();
+                processingCallback.onFrameProcessed(callbackMat, image, processingTime);
+            } else {
+                image.close();
+            }
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error processing frame", e);
+            
+            if (processingCallback != null) {
+                processingCallback.onProcessingFailed(e, image);
+            } else {
+                image.close();
+            }
+        } finally {
+            // Recycle buffers back to pool
+            if (inputBuffer != null) {
+                inputBuffer.recycle();
+            }
+            if (outputBuffer != null && outputBuffer != inputBuffer) {
+                outputBuffer.recycle();
+            }
+        }
+    }
+    
+    /**
+     * Fallback processing without buffer pooling
+     */
+    private void processWithoutPooling(@NonNull Mat inputMat, @NonNull Image image, long startTime) {
+        try {
             // Process the frame with OpenCV
             Mat processedMat = openCVProcessor.processFrame(inputMat);
             
@@ -281,7 +374,7 @@ public class FrameProcessor {
             long processingTime = System.currentTimeMillis() - startTime;
             totalFramesProcessed++;
             
-            Log.v(TAG, "Frame processed successfully in " + processingTime + "ms");
+            Log.v(TAG, "Frame processed successfully in " + processingTime + "ms (without pooling)");
             
             // Notify callback with processed frame
             if (processingCallback != null) {
@@ -296,7 +389,8 @@ public class FrameProcessor {
             inputMat.release();
             
         } catch (Exception e) {
-            Log.e(TAG, "Error processing frame", e);
+            Log.e(TAG, "Error in fallback processing", e);
+            inputMat.release();
             
             if (processingCallback != null) {
                 processingCallback.onProcessingFailed(e, image);
@@ -369,6 +463,20 @@ public class FrameProcessor {
             totalFramesDropped,
             frameQueue.size()
         );
+    }
+    
+    /**
+     * Get frame buffer statistics
+     */
+    public FrameBuffer.BufferStats getBufferStats() {
+        return frameBuffer.getStats();
+    }
+    
+    /**
+     * Get the frame buffer instance for direct access
+     */
+    public FrameBuffer getFrameBuffer() {
+        return frameBuffer;
     }
     
     /**
