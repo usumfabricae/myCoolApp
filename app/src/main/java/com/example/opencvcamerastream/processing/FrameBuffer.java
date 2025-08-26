@@ -374,16 +374,24 @@ public class FrameBuffer {
      * Check if we can allocate a new buffer
      */
     private boolean canAllocateNewBuffer(int rows, int cols, int type) {
-        // Check pool size limit
-        if (poolSize.get() >= maxPoolSize) {
+        // Check pool size limit (adjusted for memory conditions)
+        int adjustedMaxPoolSize = MemoryMonitoringUtils.getRecommendedPoolSize(maxPoolSize);
+        if (poolSize.get() >= adjustedMaxPoolSize) {
             return false;
         }
         
         // Estimate memory usage for new buffer
         long estimatedSize = (long) rows * cols * CvType.channels(type) * CvType.depth(type);
         
-        // Check memory limits
-        if (totalMemoryUsage.get() + estimatedSize > maxBufferSizeBytes) {
+        // Check if allocation is safe
+        if (!MemoryMonitoringUtils.isSafeToAllocate(estimatedSize)) {
+            Log.w(TAG, "Allocation not safe due to memory pressure");
+            return false;
+        }
+        
+        // Check memory limits (adjusted for current conditions)
+        long adjustedMemoryLimit = MemoryMonitoringUtils.getRecommendedMemoryLimit(maxBufferSizeBytes);
+        if (totalMemoryUsage.get() + estimatedSize > adjustedMemoryLimit) {
             return false;
         }
         
@@ -457,10 +465,20 @@ public class FrameBuffer {
         if (currentTime - lastMemoryCheckTime > MEMORY_CHECK_INTERVAL_MS) {
             lastMemoryCheckTime = currentTime;
             
-            if (memoryMonitor.isMemoryPressure()) {
-                Log.w(TAG, "Memory pressure detected, optimizing buffer pool");
+            // Use the enhanced memory monitoring utilities
+            MemoryMonitoringUtils.MemoryStatus memoryStatus = MemoryMonitoringUtils.getMemoryStatus();
+            
+            if (memoryStatus.isMemoryPressure()) {
+                Log.w(TAG, "Memory pressure detected: " + memoryStatus);
                 optimizeMemoryUsage();
                 memoryOptimizations.incrementAndGet();
+                
+                // Suggest garbage collection if appropriate
+                MemoryMonitoringUtils.suggestGarbageCollection();
+            } else if (memoryStatus.shouldOptimize()) {
+                Log.d(TAG, "Memory optimization recommended: " + memoryStatus);
+                // Perform lighter optimization for warning level
+                cleanupOldBuffers(false);
             }
         }
     }
