@@ -1,6 +1,6 @@
 definitions:
   env_versions: &env_versions
-    java: 11
+    java: 17
     
 workflows:
   android-workflow:
