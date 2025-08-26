@@ -8,6 +8,9 @@ import android.widget.Toast;
 import com.example.opencvcamerastream.permissions.PermissionHandler;
 import com.example.opencvcamerastream.processing.OpenCVProcessor;
 import com.example.opencvcamerastream.processing.FrameProcessor;
+import com.example.opencvcamerastream.error.ErrorHandler;
+import com.example.opencvcamerastream.error.ErrorDialogManager;
+import com.example.opencvcamerastream.error.PerformanceMonitor;
 import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
@@ -32,6 +35,11 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
     private OpenCVProcessor openCVProcessor;
     private boolean isAppInForeground = false;
     private boolean isOpenCVInitialized = false;
+    
+    // Error handling and performance monitoring
+    private ErrorHandler errorHandler;
+    private ErrorDialogManager errorDialogManager;
+    private PerformanceMonitor performanceMonitor;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -39,6 +47,9 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         setContentView(R.layout.activity_main);
         
         Log.d(TAG, "MainActivity created");
+        
+        // Initialize error handling system
+        initializeErrorHandling();
         
         // Initialize permission handler with Android 10 compliance
         initializePermissionHandler();
@@ -50,6 +61,145 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         initializeDisplayManager();
         
         // TODO: Set up Camera2 API with privacy controls (Task 4)
+    }
+    
+    /**
+     * Initialize error handling and performance monitoring system
+     * Requirement 4.1, 4.2, 4.3, 4.4: Comprehensive error handling and recovery
+     */
+    private void initializeErrorHandling() {
+        Log.d(TAG, "Initializing error handling system");
+        
+        // Initialize error handler
+        errorHandler = new ErrorHandler(this);
+        errorHandler.setErrorCallback(new ErrorHandler.ErrorCallback() {
+            @Override
+            public void onError(@NonNull ErrorHandler.ErrorInfo errorInfo) {
+                Log.w(TAG, "Error handled: " + errorInfo.category + " - " + errorInfo.message);
+                
+                // Show error dialog on UI thread
+                runOnUiThread(() -> {
+                    if (errorDialogManager != null && !errorDialogManager.isDialogShowing()) {
+                        errorDialogManager.showErrorDialog(errorInfo, new ErrorDialogManager.DialogActionCallback() {
+                            @Override
+                            public void onRetryRequested() {
+                                handleErrorRetry(errorInfo);
+                            }
+                            
+                            @Override
+                            public void onSettingsRequested() {
+                                // ErrorDialogManager handles opening settings
+                                Log.d(TAG, "User requested to open settings");
+                            }
+                            
+                            @Override
+                            public void onDismissed() {
+                                Log.d(TAG, "Error dialog dismissed");
+                            }
+                            
+                            @Override
+                            public void onFallbackAccepted() {
+                                handleErrorFallback(errorInfo);
+                            }
+                        });
+                    }
+                });
+            }
+            
+            @Override
+            public void onRecoveryAttempt(@NonNull ErrorHandler.ErrorInfo errorInfo, int attemptNumber) {
+                Log.i(TAG, "Recovery attempt " + attemptNumber + " for " + errorInfo.category);
+                
+                runOnUiThread(() -> {
+                    if (errorDialogManager != null) {
+                        errorDialogManager.showRecoveryDialog(
+                                "Attempting to recover from " + errorInfo.category.name().toLowerCase() + " error",
+                                attemptNumber);
+                    }
+                });
+            }
+            
+            @Override
+            public void onRecoverySuccess(@NonNull ErrorHandler.ErrorInfo errorInfo, int totalAttempts) {
+                Log.i(TAG, "Recovery successful after " + totalAttempts + " attempts for " + errorInfo.category);
+                
+                runOnUiThread(() -> {
+                    if (errorDialogManager != null) {
+                        errorDialogManager.showRecoverySuccessDialog(
+                                errorInfo.category.name().toLowerCase() + " error recovered",
+                                totalAttempts);
+                    }
+                    Toast.makeText(MainActivity.this, "System recovered successfully", Toast.LENGTH_SHORT).show();
+                });
+            }
+            
+            @Override
+            public void onRecoveryFailed(@NonNull ErrorHandler.ErrorInfo errorInfo, int totalAttempts) {
+                Log.w(TAG, "Recovery failed after " + totalAttempts + " attempts for " + errorInfo.category);
+                
+                runOnUiThread(() -> {
+                    if (errorDialogManager != null) {
+                        errorDialogManager.showRecoveryFailureDialog(
+                                "Unable to recover from " + errorInfo.category.name().toLowerCase() + " error",
+                                totalAttempts,
+                                null);
+                    }
+                });
+            }
+        });
+        
+        // Initialize error dialog manager
+        errorDialogManager = new ErrorDialogManager(this);
+        
+        // Initialize performance monitor
+        performanceMonitor = new PerformanceMonitor(this);
+        performanceMonitor.setPerformanceCallback(new PerformanceMonitor.PerformanceCallback() {
+            @Override
+            public void onPerformanceLevelChanged(@NonNull PerformanceMonitor.PerformanceLevel newLevel, 
+                                                @NonNull PerformanceMonitor.PerformanceLevel oldLevel) {
+                Log.i(TAG, "Performance level changed: " + oldLevel + " -> " + newLevel);
+                
+                runOnUiThread(() -> {
+                    String message = "Performance adjusted to " + newLevel.name().toLowerCase() + " level";
+                    Toast.makeText(MainActivity.this, message, Toast.LENGTH_SHORT).show();
+                });
+                
+                // Update processing configuration based on new performance level
+                updateProcessingConfiguration(newLevel);
+            }
+            
+            @Override
+            public void onMemoryWarning(long usedMemoryMB, long totalMemoryMB) {
+                Log.w(TAG, "Memory warning: " + usedMemoryMB + "MB / " + totalMemoryMB + "MB");
+                
+                runOnUiThread(() -> {
+                    Toast.makeText(MainActivity.this, "Memory usage high, optimizing performance", 
+                            Toast.LENGTH_SHORT).show();
+                });
+            }
+            
+            @Override
+            public void onMemoryCritical(long usedMemoryMB, long totalMemoryMB) {
+                Log.e(TAG, "Critical memory usage: " + usedMemoryMB + "MB / " + totalMemoryMB + "MB");
+                
+                runOnUiThread(() -> {
+                    Toast.makeText(MainActivity.this, "Critical memory usage, reducing processing quality", 
+                            Toast.LENGTH_LONG).show();
+                });
+            }
+            
+            @Override
+            public void onProcessingTimeWarning(long processingTimeMs) {
+                Log.w(TAG, "Processing time warning: " + processingTimeMs + "ms");
+            }
+            
+            @Override
+            public void onFrameDropRecommended(@NonNull String reason) {
+                Log.d(TAG, "Frame drop recommended: " + reason);
+            }
+        });
+        
+        Log.d(TAG, "Error handling system initialized");
     }
     
     /**
@@ -76,6 +226,14 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         config.maxProcessingTimeMs = 50; // Requirement 2.3
         
         openCVProcessor = new OpenCVProcessor(config);
+        
+        // Set error handler and performance monitor for OpenCV processor
+        if (errorHandler != null) {
+            openCVProcessor.setErrorHandler(errorHandler);
+        }
+        if (performanceMonitor != null) {
+            openCVProcessor.setPerformanceMonitor(performanceMonitor);
+        }
         
         // Create frame processor for camera-to-display pipeline integration
         frameProcessor = new com.example.opencvcamerastream.processing.FrameProcessor(openCVProcessor);
@@ -401,6 +559,11 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             // Initialize camera manager
             cameraManager = new com.example.opencvcamerastream.camera.CameraManager(this);
             
+            // Set error handler for camera manager
+            if (errorHandler != null) {
+                cameraManager.setErrorHandler(errorHandler);
+            }
+            
             // Set up camera callbacks
             cameraManager.setCameraCallback(new com.example.opencvcamerastream.camera.CameraManager.CameraCallback() {
                 @Override
@@ -555,6 +718,12 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             displayManager = null;
         }
         
+        // Release error handling resources
+        if (errorDialogManager != null) {
+            errorDialogManager.release();
+            errorDialogManager = null;
+        }
+        
         Log.d(TAG, "All resources released");
     }
     
@@ -564,5 +733,146 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
      */
     public boolean isAppInForeground() {
         return isAppInForeground;
+    }
+    
+    /**
+     * Handle error retry requests from user
+     */
+    private void handleErrorRetry(@NonNull ErrorHandler.ErrorInfo errorInfo) {
+        Log.d(TAG, "Handling error retry for: " + errorInfo.category);
+        
+        switch (errorInfo.category) {
+            case CAMERA_PERMISSION:
+                // Request camera permission again
+                if (permissionHandler != null) {
+                    permissionHandler.requestCameraPermission();
+                }
+                break;
+                
+            case CAMERA_HARDWARE:
+                // Attempt camera reconnection
+                if (cameraManager != null) {
+                    cameraManager.attemptReconnection();
+                }
+                break;
+                
+            case OPENCV_PROCESSING:
+                // Reset OpenCV processor and exit fallback mode
+                if (openCVProcessor != null && openCVProcessor.isFallbackMode()) {
+                    openCVProcessor.exitFallbackMode();
+                }
+                break;
+                
+            case DISPLAY_ERROR:
+                // Reinitialize display manager
+                initializeDisplayManager();
+                break;
+                
+            case SYSTEM_ERROR:
+                // General system recovery - restart components
+                restartSystemComponents();
+                break;
+                
+            default:
+                Log.w(TAG, "No specific retry handler for: " + errorInfo.category);
+                break;
+        }
+    }
+    
+    /**
+     * Handle error fallback acceptance from user
+     */
+    private void handleErrorFallback(@NonNull ErrorHandler.ErrorInfo errorInfo) {
+        Log.d(TAG, "Handling error fallback for: " + errorInfo.category);
+        
+        switch (errorInfo.category) {
+            case OPENCV_PROCESSING:
+                // Continue with unprocessed frames
+                Toast.makeText(this, "Showing original camera feed", Toast.LENGTH_SHORT).show();
+                break;
+                
+            case MEMORY_PRESSURE:
+                // Accept performance degradation
+                Toast.makeText(this, "Performance optimized for current conditions", Toast.LENGTH_SHORT).show();
+                break;
+                
+            default:
+                Log.d(TAG, "Fallback accepted for: " + errorInfo.category);
+                break;
+        }
+    }
+    
+    /**
+     * Update processing configuration based on performance level
+     */
+    private void updateProcessingConfiguration(@NonNull PerformanceMonitor.PerformanceLevel performanceLevel) {
+        if (openCVProcessor == null) {
+            return;
+        }
+        
+        // Get processing recommendation
+        PerformanceMonitor.ProcessingRecommendation recommendation = 
+                performanceMonitor.getProcessingRecommendation();
+        
+        // Update OpenCV processor configuration
+        OpenCVProcessor.ProcessingConfig config = new OpenCVProcessor.ProcessingConfig();
+        config.enablePerformanceOptimization = true;
+        config.maxProcessingTimeMs = recommendation.maxProcessingTimeMs;
+        
+        // Adjust processing mode based on performance level
+        switch (performanceLevel) {
+            case HIGH:
+                config.mode = OpenCVProcessor.ProcessingMode.GRAYSCALE;
+                break;
+            case MEDIUM:
+                config.mode = OpenCVProcessor.ProcessingMode.GRAYSCALE;
+                break;
+            case LOW:
+            case CRITICAL:
+                config.mode = OpenCVProcessor.ProcessingMode.PASSTHROUGH;
+                break;
+        }
+        
+        openCVProcessor.setProcessingConfig(config);
+        
+        Log.d(TAG, "Processing configuration updated for performance level: " + performanceLevel);
+    }
+    
+    /**
+     * Restart system components for recovery
+     */
+    private void restartSystemComponents() {
+        Log.d(TAG, "Restarting system components for recovery");
+        
+        try {
+            // Stop current operations
+            if (cameraManager != null && cameraManager.isPreviewActive()) {
+                cameraManager.stopPreview();
+            }
+            
+            if (frameProcessor != null && frameProcessor.isProcessing()) {
+                frameProcessor.stop();
+            }
+            
+            // Wait a moment
+            new android.os.Handler().postDelayed(() -> {
+                // Restart components if app is still in foreground
+                if (isAppInForeground) {
+                    if (permissionHandler != null && permissionHandler.isCameraPermissionGranted()) {
+                        initializeCameraComponents();
+                    }
+                    
+                    if (frameProcessor != null && isOpenCVInitialized) {
+                        frameProcessor.start();
+                    }
+                }
+            }, 1000);
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error during system component restart", e);
+            if (errorHandler != null) {
+                errorHandler.handleSystemError(e, "component restart");
+            }
+        }
     }
 }

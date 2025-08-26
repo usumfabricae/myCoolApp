@@ -29,6 +29,8 @@ import java.util.Comparator;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
+import com.example.opencvcamerastream.error.ErrorHandler;
+
 /**
  * CameraManager handles all camera-related operations using Camera2 API
  * 
@@ -72,6 +74,13 @@ public class CameraManager {
     private final Context context;
     private boolean isInitialized = false;
     private boolean isPreviewActive = false;
+    
+    // Error handling
+    private ErrorHandler errorHandler;
+    private int reconnectionAttempts = 0;
+    private static final int MAX_RECONNECTION_ATTEMPTS = 3;
+    private long lastReconnectionTime = 0;
+    private static final long RECONNECTION_DELAY_MS = 2000;
     
     // Callbacks
     private CameraCallback cameraCallback;
@@ -118,6 +127,7 @@ public class CameraManager {
         this.context = context.getApplicationContext();
         this.systemCameraManager = (android.hardware.camera2.CameraManager) 
                 context.getSystemService(Context.CAMERA_SERVICE);
+        this.errorHandler = new ErrorHandler(context);
     }
     
     /**
@@ -134,6 +144,14 @@ public class CameraManager {
      */
     public void setFrameCallback(@Nullable FrameCallback callback) {
         this.frameCallback = callback;
+    }
+    
+    /**
+     * Set error handler for camera operations
+     * @param errorHandler Error handler instance
+     */
+    public void setErrorHandler(@Nullable ErrorHandler errorHandler) {
+        this.errorHandler = errorHandler;
     }
     
     /**
@@ -165,6 +183,9 @@ public class CameraManager {
         if (ActivityCompat.checkSelfPermission(context, Manifest.permission.CAMERA) 
                 != PackageManager.PERMISSION_GRANTED) {
             Log.e(TAG, "Camera permission not granted");
+            if (errorHandler != null) {
+                errorHandler.handleCameraPermissionError(false);
+            }
             notifyCameraError(-1, "Camera permission not granted");
             return false;
         }
@@ -206,10 +227,16 @@ public class CameraManager {
             
         } catch (CameraAccessException e) {
             Log.e(TAG, "Camera access exception during initialization", e);
+            if (errorHandler != null) {
+                errorHandler.handleCameraHardwareError(e.getReason(), e.getMessage(), e);
+            }
             notifyCameraError(-1, "Camera access failed: " + e.getMessage());
             return false;
         } catch (Exception e) {
             Log.e(TAG, "Unexpected error during camera initialization", e);
+            if (errorHandler != null) {
+                errorHandler.handleSystemError(e, "camera initialization");
+            }
             notifyCameraError(-1, "Camera initialization failed: " + e.getMessage());
             return false;
         }
@@ -241,6 +268,9 @@ public class CameraManager {
             
         } catch (Exception e) {
             Log.e(TAG, "Failed to start camera preview", e);
+            if (errorHandler != null) {
+                errorHandler.handleSystemError(e, "camera preview start");
+            }
             notifyCameraError(-1, "Failed to start preview: " + e.getMessage());
             return false;
         }
@@ -331,6 +361,83 @@ public class CameraManager {
     }
     
     /**
+     * Attempt automatic camera reconnection with exponential backoff
+     * Requirement 4.2: Attempt to reconnect automatically when camera becomes unavailable
+     */
+    public void attemptReconnection() {
+        long currentTime = System.currentTimeMillis();
+        
+        // Check if enough time has passed since last reconnection attempt
+        if (currentTime - lastReconnectionTime < RECONNECTION_DELAY_MS) {
+            Log.d(TAG, "Reconnection attempt too soon, waiting...");
+            return;
+        }
+        
+        // Check if we've exceeded max attempts
+        if (reconnectionAttempts >= MAX_RECONNECTION_ATTEMPTS) {
+            Log.w(TAG, "Max reconnection attempts reached: " + reconnectionAttempts);
+            return;
+        }
+        
+        reconnectionAttempts++;
+        lastReconnectionTime = currentTime;
+        
+        Log.i(TAG, "Attempting camera reconnection, attempt " + reconnectionAttempts);
+        
+        // Run reconnection on background thread
+        if (backgroundHandler != null) {
+            backgroundHandler.post(() -> {
+                try {
+                    // Stop current preview if active
+                    if (isPreviewActive) {
+                        stopPreview();
+                    }
+                    
+                    // Wait a moment before reconnecting
+                    Thread.sleep(500);
+                    
+                    // Attempt to restart
+                    if (startPreview()) {
+                        Log.i(TAG, "Camera reconnection successful after " + reconnectionAttempts + " attempts");
+                        reconnectionAttempts = 0; // Reset counter on success
+                        
+                        if (errorHandler != null) {
+                            errorHandler.resetErrorCounters();
+                        }
+                    } else {
+                        Log.w(TAG, "Camera reconnection attempt " + reconnectionAttempts + " failed");
+                        
+                        // Schedule next attempt with exponential backoff
+                        if (reconnectionAttempts < MAX_RECONNECTION_ATTEMPTS) {
+                            long nextDelay = RECONNECTION_DELAY_MS * (1L << (reconnectionAttempts - 1));
+                            Log.d(TAG, "Scheduling next reconnection attempt in " + nextDelay + "ms");
+                            
+                            backgroundHandler.postDelayed(this::attemptReconnection, nextDelay);
+                        }
+                    }
+                } catch (InterruptedException e) {
+                    Log.w(TAG, "Reconnection attempt interrupted", e);
+                    Thread.currentThread().interrupt();
+                } catch (Exception e) {
+                    Log.e(TAG, "Error during reconnection attempt", e);
+                    if (errorHandler != null) {
+                        errorHandler.handleSystemError(e, "camera reconnection");
+                    }
+                }
+            });
+        }
+    }
+    
+    /**
+     * Reset reconnection attempts counter
+     */
+    public void resetReconnectionAttempts() {
+        reconnectionAttempts = 0;
+        lastReconnectionTime = 0;
+        Log.d(TAG, "Reconnection attempts counter reset");
+    }
+    
+    /**
      * Select the best available camera (prefer back-facing)
      */
     private String selectCamera() throws CameraAccessException {
@@ -408,6 +515,9 @@ public class CameraManager {
         if (ActivityCompat.checkSelfPermission(context, Manifest.permission.CAMERA) 
                 != PackageManager.PERMISSION_GRANTED) {
             Log.e(TAG, "Camera permission not granted");
+            if (errorHandler != null) {
+                errorHandler.handleCameraPermissionError(false);
+            }
             notifyCameraError(-1, "Camera permission not granted");
             return;
         }
@@ -464,6 +574,9 @@ public class CameraManager {
                                 
                             } catch (CameraAccessException e) {
                                 Log.e(TAG, "Failed to start camera preview", e);
+                                if (errorHandler != null) {
+                                    errorHandler.handleCameraHardwareError(e.getReason(), e.getMessage(), e);
+                                }
                                 notifyCameraError(e.getReason(), e.getMessage());
                             }
                         }
@@ -477,6 +590,9 @@ public class CameraManager {
                     
         } catch (CameraAccessException e) {
             Log.e(TAG, "Failed to create camera preview session", e);
+            if (errorHandler != null) {
+                errorHandler.handleCameraHardwareError(e.getReason(), e.getMessage(), e);
+            }
             notifyCameraError(e.getReason(), e.getMessage());
         }
     }
@@ -541,6 +657,9 @@ public class CameraManager {
             if (cameraCallback != null) {
                 cameraCallback.onCameraDisconnected();
             }
+            
+            // Attempt automatic reconnection
+            attemptReconnection();
         }
         
         @Override
@@ -552,7 +671,15 @@ public class CameraManager {
             isPreviewActive = false;
             
             String errorMessage = getCameraErrorMessage(error);
+            if (errorHandler != null) {
+                errorHandler.handleCameraHardwareError(error, errorMessage, null);
+            }
             notifyCameraError(error, errorMessage);
+            
+            // Attempt automatic reconnection for recoverable errors
+            if (isRecoverableError(error)) {
+                attemptReconnection();
+            }
         }
     };
     
@@ -571,6 +698,9 @@ public class CameraManager {
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Error processing captured image", e);
+                if (errorHandler != null) {
+                    errorHandler.handleSystemError(e, "image processing");
+                }
             } finally {
                 if (image != null) {
                     image.close();
@@ -596,6 +726,23 @@ public class CameraManager {
                 return "Maximum cameras in use";
             default:
                 return "Unknown camera error: " + error;
+        }
+    }
+    
+    /**
+     * Check if camera error is recoverable through reconnection
+     */
+    private boolean isRecoverableError(int error) {
+        switch (error) {
+            case CameraDevice.StateCallback.ERROR_CAMERA_DEVICE:
+            case CameraDevice.StateCallback.ERROR_CAMERA_SERVICE:
+                return true; // These errors might be temporary
+            case CameraDevice.StateCallback.ERROR_CAMERA_DISABLED:
+            case CameraDevice.StateCallback.ERROR_CAMERA_IN_USE:
+            case CameraDevice.StateCallback.ERROR_MAX_CAMERAS_IN_USE:
+                return false; // These require user intervention
+            default:
+                return true; // Unknown errors - attempt recovery
         }
     }
     

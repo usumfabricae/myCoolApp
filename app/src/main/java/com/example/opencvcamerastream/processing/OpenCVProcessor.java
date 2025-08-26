@@ -11,6 +11,9 @@ import org.opencv.core.Mat;
 import org.opencv.imgproc.Imgproc;
 import java.nio.ByteBuffer;
 
+import com.example.opencvcamerastream.error.ErrorHandler;
+import com.example.opencvcamerastream.error.PerformanceMonitor;
+
 /**
  * OpenCVProcessor handles all OpenCV image processing operations
  * 
@@ -58,6 +61,13 @@ public class OpenCVProcessor {
     private boolean isInitialized = false;
     private long lastProcessingTime = 0;
     
+    // Error handling and performance monitoring
+    private ErrorHandler errorHandler;
+    private PerformanceMonitor performanceMonitor;
+    private boolean fallbackMode = false;
+    private int consecutiveErrors = 0;
+    private static final int MAX_CONSECUTIVE_ERRORS = 5;
+    
     // Performance monitoring
     private static class PerformanceMetrics {
         long totalFrames = 0;
@@ -93,6 +103,20 @@ public class OpenCVProcessor {
     
     public OpenCVProcessor(@NonNull ProcessingConfig config) {
         this.config = config;
+    }
+    
+    /**
+     * Set error handler for processing operations
+     */
+    public void setErrorHandler(@Nullable ErrorHandler errorHandler) {
+        this.errorHandler = errorHandler;
+    }
+    
+    /**
+     * Set performance monitor for optimization
+     */
+    public void setPerformanceMonitor(@Nullable PerformanceMonitor performanceMonitor) {
+        this.performanceMonitor = performanceMonitor;
     }
     
     /**
@@ -145,9 +169,28 @@ public class OpenCVProcessor {
     }
     
     /**
-     * Process camera frame
+     * Check if processor is in fallback mode
+     */
+    public boolean isFallbackMode() {
+        return fallbackMode;
+    }
+    
+    /**
+     * Exit fallback mode and resume normal processing
+     */
+    public void exitFallbackMode() {
+        if (fallbackMode) {
+            fallbackMode = false;
+            consecutiveErrors = 0;
+            Log.i(TAG, "Exited fallback mode, resuming normal processing");
+        }
+    }
+    
+    /**
+     * Process camera frame with error handling and fallback
      * Requirement 2.1: Pass frame to OpenCV for processing
      * Requirement 2.3: Return processed frame within 50ms
+     * Requirement 4.3: Fall back to original frame on processing failure
      */
     public Mat processFrame(@NonNull Mat inputFrame) {
         if (!isInitialized) {
@@ -155,62 +198,75 @@ public class OpenCVProcessor {
             return inputFrame.clone();
         }
         
+        // Check if in fallback mode due to consecutive errors
+        if (fallbackMode) {
+            Log.d(TAG, "In fallback mode, returning original frame");
+            return inputFrame.clone();
+        }
+        
         long startTime = System.currentTimeMillis();
         Mat processedFrame = null;
         
         try {
-            // Check for timeout before processing
-            if (config.enablePerformanceOptimization && 
-                lastProcessingTime > config.maxProcessingTimeMs) {
-                Log.w(TAG, "Previous processing exceeded timeout, skipping frame");
-                metrics.recordTimeout();
-                if (callback != null) {
-                    callback.onProcessingTimeout(inputFrame, lastProcessingTime);
+            // Get performance recommendations if available
+            PerformanceMonitor.ProcessingRecommendation recommendation = null;
+            if (performanceMonitor != null) {
+                recommendation = performanceMonitor.getProcessingRecommendation();
+                
+                // Adjust processing based on performance level
+                if (!recommendation.enableAdvancedProcessing) {
+                    Log.d(TAG, "Advanced processing disabled due to performance constraints");
+                    processedFrame = inputFrame.clone();
+                } else {
+                    // Check for timeout before processing
+                    if (config.enablePerformanceOptimization && 
+                        lastProcessingTime > recommendation.maxProcessingTimeMs) {
+                        Log.w(TAG, "Previous processing exceeded timeout, skipping frame");
+                        metrics.recordTimeout();
+                        if (performanceMonitor != null) {
+                            performanceMonitor.recordFrameDrop("processing timeout");
+                        }
+                        if (callback != null) {
+                            callback.onProcessingTimeout(inputFrame, lastProcessingTime);
+                        }
+                        return inputFrame.clone();
+                    }
+                    
+                    // Apply processing based on mode and performance level
+                    processedFrame = applyProcessing(inputFrame, recommendation);
                 }
-                return inputFrame.clone();
-            }
-            
-            // Apply processing based on mode
-            switch (config.mode) {
-                case PASSTHROUGH:
-                    processedFrame = inputFrame.clone();
-                    break;
-                    
-                case GRAYSCALE:
-                    processedFrame = convertToGrayscale(inputFrame);
-                    break;
-                    
-                case EDGE_DETECTION:
-                    // Future implementation for task 10
-                    Log.d(TAG, "Edge detection not yet implemented, using grayscale");
-                    processedFrame = convertToGrayscale(inputFrame);
-                    break;
-                    
-                case COLOR_FILTER:
-                    // Future implementation for task 10
-                    Log.d(TAG, "Color filter not yet implemented, using grayscale");
-                    processedFrame = convertToGrayscale(inputFrame);
-                    break;
-                    
-                default:
-                    processedFrame = inputFrame.clone();
-                    break;
+            } else {
+                // No performance monitor - use default processing
+                processedFrame = applyProcessing(inputFrame, null);
             }
             
             long processingTime = System.currentTimeMillis() - startTime;
             lastProcessingTime = processingTime;
             metrics.recordProcessing(processingTime);
             
+            // Record processing time with performance monitor
+            if (performanceMonitor != null) {
+                performanceMonitor.recordProcessingTime(processingTime);
+            }
+            
             Log.v(TAG, "Frame processed in " + processingTime + "ms, mode: " + config.mode);
             
             // Check if processing exceeded timeout
-            if (processingTime > config.maxProcessingTimeMs) {
-                Log.w(TAG, "Processing exceeded timeout: " + processingTime + "ms > " + config.maxProcessingTimeMs + "ms");
+            int maxTime = recommendation != null ? recommendation.maxProcessingTimeMs : config.maxProcessingTimeMs;
+            if (processingTime > maxTime) {
+                Log.w(TAG, "Processing exceeded timeout: " + processingTime + "ms > " + maxTime + "ms");
                 metrics.recordTimeout();
                 if (callback != null) {
                     callback.onProcessingTimeout(inputFrame, processingTime);
                 }
-                // Still return the processed frame, but log the timeout
+            }
+            
+            // Reset consecutive error count on success
+            if (consecutiveErrors > 0) {
+                consecutiveErrors = 0;
+                if (errorHandler != null) {
+                    errorHandler.resetErrorCounters();
+                }
             }
             
             if (callback != null) {
@@ -222,13 +278,94 @@ public class OpenCVProcessor {
         } catch (Exception e) {
             Log.e(TAG, "Error processing frame", e);
             metrics.recordError();
+            consecutiveErrors++;
+            
+            // Handle error through error handler
+            if (errorHandler != null) {
+                errorHandler.handleOpenCVProcessingError(e, true);
+            }
             
             if (callback != null) {
                 callback.onProcessingError(e, inputFrame);
             }
             
+            // Check if we should enter fallback mode
+            if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                Log.w(TAG, "Entering fallback mode due to consecutive errors: " + consecutiveErrors);
+                fallbackMode = true;
+            }
+            
             // Requirement 4.3: Fall back to original frame on processing failure
             return inputFrame != null ? inputFrame.clone() : new Mat();
+        }
+    }
+    
+    /**
+     * Apply processing based on mode and performance recommendations
+     */
+    private Mat applyProcessing(@NonNull Mat inputFrame, 
+                               @Nullable PerformanceMonitor.ProcessingRecommendation recommendation) {
+        Mat processedFrame;
+        
+        switch (config.mode) {
+            case PASSTHROUGH:
+                processedFrame = inputFrame.clone();
+                break;
+                
+            case GRAYSCALE:
+                processedFrame = convertToGrayscale(inputFrame);
+                break;
+                
+            case EDGE_DETECTION:
+                // Future implementation for task 10
+                Log.d(TAG, "Edge detection not yet implemented, using grayscale");
+                processedFrame = convertToGrayscale(inputFrame);
+                break;
+                
+            case COLOR_FILTER:
+                // Future implementation for task 10
+                Log.d(TAG, "Color filter not yet implemented, using grayscale");
+                processedFrame = convertToGrayscale(inputFrame);
+                break;
+                
+            default:
+                processedFrame = inputFrame.clone();
+                break;
+        }
+        
+        // Apply quality adjustment if recommended
+        if (recommendation != null && recommendation.processingQuality < 1.0f) {
+            processedFrame = applyQualityReduction(processedFrame, recommendation.processingQuality);
+        }
+        
+        return processedFrame;
+    }
+    
+    /**
+     * Apply quality reduction for performance optimization
+     */
+    private Mat applyQualityReduction(@NonNull Mat inputFrame, float qualityFactor) {
+        if (qualityFactor >= 1.0f) {
+            return inputFrame;
+        }
+        
+        try {
+            // Reduce resolution based on quality factor
+            int newWidth = (int) (inputFrame.width() * qualityFactor);
+            int newHeight = (int) (inputFrame.height() * qualityFactor);
+            
+            Mat resizedFrame = new Mat();
+            org.opencv.imgproc.Imgproc.resize(inputFrame, resizedFrame, 
+                    new org.opencv.core.Size(newWidth, newHeight));
+            
+            Log.v(TAG, "Applied quality reduction: " + qualityFactor + 
+                      ", new size: " + newWidth + "x" + newHeight);
+            
+            return resizedFrame;
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error applying quality reduction", e);
+            return inputFrame;
         }
     }
     
