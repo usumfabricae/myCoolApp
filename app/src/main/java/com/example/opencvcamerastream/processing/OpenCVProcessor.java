@@ -32,8 +32,11 @@ public class OpenCVProcessor {
     public enum ProcessingMode {
         PASSTHROUGH,    // No processing, original frame
         GRAYSCALE,      // Convert to grayscale
-        EDGE_DETECTION, // Canny edge detection (future implementation)
-        COLOR_FILTER    // Color space transformations (future implementation)
+        EDGE_DETECTION, // Canny edge detection
+        COLOR_HSV,      // HSV color space conversion
+        COLOR_LAB,      // LAB color space conversion
+        BLUR,           // Gaussian blur filter
+        SHARPEN         // Sharpening filter
     }
     
     // Processing configuration
@@ -41,6 +44,19 @@ public class OpenCVProcessor {
         public ProcessingMode mode = ProcessingMode.GRAYSCALE;
         public boolean enablePerformanceOptimization = true;
         public int maxProcessingTimeMs = 50; // Requirement 2.3: within 50ms
+        
+        // Edge detection parameters
+        public double cannyLowThreshold = 50.0;
+        public double cannyHighThreshold = 150.0;
+        public int cannyApertureSize = 3;
+        
+        // Blur parameters
+        public int blurKernelSize = 15;
+        public double blurSigmaX = 0.0;
+        public double blurSigmaY = 0.0;
+        
+        // Sharpen parameters
+        public float sharpenStrength = 1.0f;
         
         public ProcessingConfig() {}
         
@@ -317,15 +333,23 @@ public class OpenCVProcessor {
                 break;
                 
             case EDGE_DETECTION:
-                // Future implementation for task 10
-                Log.d(TAG, "Edge detection not yet implemented, using grayscale");
-                processedFrame = convertToGrayscale(inputFrame);
+                processedFrame = applyEdgeDetection(inputFrame);
                 break;
                 
-            case COLOR_FILTER:
-                // Future implementation for task 10
-                Log.d(TAG, "Color filter not yet implemented, using grayscale");
-                processedFrame = convertToGrayscale(inputFrame);
+            case COLOR_HSV:
+                processedFrame = convertToHSV(inputFrame);
+                break;
+                
+            case COLOR_LAB:
+                processedFrame = convertToLAB(inputFrame);
+                break;
+                
+            case BLUR:
+                processedFrame = applyBlur(inputFrame);
+                break;
+                
+            case SHARPEN:
+                processedFrame = applySharpen(inputFrame);
                 break;
                 
             default:
@@ -392,6 +416,176 @@ public class OpenCVProcessor {
             
         } catch (Exception e) {
             Log.e(TAG, "Error converting to grayscale", e);
+            throw e;
+        }
+    }
+    
+    /**
+     * Apply Canny edge detection
+     * Requirement 2.2: Apply basic image processing operations (edge detection)
+     */
+    private Mat applyEdgeDetection(@NonNull Mat inputFrame) {
+        Mat edgeFrame = new Mat();
+        Mat grayFrame = new Mat();
+        
+        try {
+            // Convert to grayscale first if needed
+            if (inputFrame.channels() == 3) {
+                Imgproc.cvtColor(inputFrame, grayFrame, Imgproc.COLOR_RGB2GRAY);
+            } else if (inputFrame.channels() == 4) {
+                Imgproc.cvtColor(inputFrame, grayFrame, Imgproc.COLOR_RGBA2GRAY);
+            } else {
+                grayFrame = inputFrame.clone();
+            }
+            
+            // Apply Canny edge detection
+            Imgproc.Canny(grayFrame, edgeFrame, 
+                    config.cannyLowThreshold, 
+                    config.cannyHighThreshold, 
+                    config.cannyApertureSize);
+            
+            // Convert back to 3-channel for display consistency
+            Mat colorEdgeFrame = new Mat();
+            Imgproc.cvtColor(edgeFrame, colorEdgeFrame, Imgproc.COLOR_GRAY2RGB);
+            
+            // Clean up intermediate matrices
+            grayFrame.release();
+            edgeFrame.release();
+            
+            return colorEdgeFrame;
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error applying edge detection", e);
+            // Clean up on error
+            if (grayFrame != null) grayFrame.release();
+            if (edgeFrame != null) edgeFrame.release();
+            throw e;
+        }
+    }
+    
+    /**
+     * Convert frame to HSV color space
+     * Requirement 2.2: Apply basic image processing operations (color space conversion)
+     */
+    private Mat convertToHSV(@NonNull Mat inputFrame) {
+        Mat hsvFrame = new Mat();
+        
+        try {
+            if (inputFrame.channels() == 3) {
+                // RGB to HSV
+                Imgproc.cvtColor(inputFrame, hsvFrame, Imgproc.COLOR_RGB2HSV);
+            } else if (inputFrame.channels() == 4) {
+                // RGBA to HSV (convert to RGB first)
+                Mat rgbFrame = new Mat();
+                Imgproc.cvtColor(inputFrame, rgbFrame, Imgproc.COLOR_RGBA2RGB);
+                Imgproc.cvtColor(rgbFrame, hsvFrame, Imgproc.COLOR_RGB2HSV);
+                rgbFrame.release();
+            } else {
+                // Single channel - convert to RGB first, then HSV
+                Mat rgbFrame = new Mat();
+                Imgproc.cvtColor(inputFrame, rgbFrame, Imgproc.COLOR_GRAY2RGB);
+                Imgproc.cvtColor(rgbFrame, hsvFrame, Imgproc.COLOR_RGB2HSV);
+                rgbFrame.release();
+            }
+            
+            return hsvFrame;
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error converting to HSV", e);
+            throw e;
+        }
+    }
+    
+    /**
+     * Convert frame to LAB color space
+     * Requirement 2.2: Apply basic image processing operations (color space conversion)
+     */
+    private Mat convertToLAB(@NonNull Mat inputFrame) {
+        Mat labFrame = new Mat();
+        
+        try {
+            if (inputFrame.channels() == 3) {
+                // RGB to LAB
+                Imgproc.cvtColor(inputFrame, labFrame, Imgproc.COLOR_RGB2Lab);
+            } else if (inputFrame.channels() == 4) {
+                // RGBA to LAB (convert to RGB first)
+                Mat rgbFrame = new Mat();
+                Imgproc.cvtColor(inputFrame, rgbFrame, Imgproc.COLOR_RGBA2RGB);
+                Imgproc.cvtColor(rgbFrame, labFrame, Imgproc.COLOR_RGB2Lab);
+                rgbFrame.release();
+            } else {
+                // Single channel - convert to RGB first, then LAB
+                Mat rgbFrame = new Mat();
+                Imgproc.cvtColor(inputFrame, rgbFrame, Imgproc.COLOR_GRAY2RGB);
+                Imgproc.cvtColor(rgbFrame, labFrame, Imgproc.COLOR_RGB2Lab);
+                rgbFrame.release();
+            }
+            
+            return labFrame;
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error converting to LAB", e);
+            throw e;
+        }
+    }
+    
+    /**
+     * Apply Gaussian blur filter
+     * Requirement 2.2: Apply basic image processing operations (blur filter)
+     */
+    private Mat applyBlur(@NonNull Mat inputFrame) {
+        Mat blurredFrame = new Mat();
+        
+        try {
+            // Ensure kernel size is odd and positive
+            int kernelSize = Math.max(1, config.blurKernelSize);
+            if (kernelSize % 2 == 0) {
+                kernelSize += 1; // Make it odd
+            }
+            
+            // Apply Gaussian blur
+            org.opencv.core.Size kernelSizeObj = new org.opencv.core.Size(kernelSize, kernelSize);
+            Imgproc.GaussianBlur(inputFrame, blurredFrame, kernelSizeObj, 
+                    config.blurSigmaX, config.blurSigmaY);
+            
+            return blurredFrame;
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error applying blur", e);
+            throw e;
+        }
+    }
+    
+    /**
+     * Apply sharpening filter
+     * Requirement 2.2: Apply basic image processing operations (sharpen filter)
+     */
+    private Mat applySharpen(@NonNull Mat inputFrame) {
+        Mat sharpenedFrame = new Mat();
+        Mat blurredFrame = new Mat();
+        
+        try {
+            // Create a slightly blurred version
+            org.opencv.core.Size kernelSize = new org.opencv.core.Size(3, 3);
+            Imgproc.GaussianBlur(inputFrame, blurredFrame, kernelSize, 1.0, 1.0);
+            
+            // Create sharpening mask: original - blurred
+            Mat mask = new Mat();
+            org.opencv.core.Core.subtract(inputFrame, blurredFrame, mask);
+            
+            // Apply sharpening: original + strength * mask
+            org.opencv.core.Core.addWeighted(inputFrame, 1.0, mask, config.sharpenStrength, 0, sharpenedFrame);
+            
+            // Clean up intermediate matrices
+            blurredFrame.release();
+            mask.release();
+            
+            return sharpenedFrame;
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error applying sharpen", e);
+            // Clean up on error
+            if (blurredFrame != null) blurredFrame.release();
             throw e;
         }
     }

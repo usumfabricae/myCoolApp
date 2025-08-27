@@ -180,13 +180,16 @@ public class OpenCVProcessorTest {
     }
     
     @Test
-    public void testProcessFrameColorFilterFallback() {
+    public void testProcessFrameEdgeDetectionMode() {
         processor.initialize();
         
-        // Set color filter mode (should fallback to grayscale)
-        OpenCVProcessor.ProcessingConfig colorConfig = new OpenCVProcessor.ProcessingConfig();
-        colorConfig.mode = OpenCVProcessor.ProcessingMode.COLOR_FILTER;
-        processor.setProcessingConfig(colorConfig);
+        // Set edge detection mode
+        OpenCVProcessor.ProcessingConfig edgeConfig = new OpenCVProcessor.ProcessingConfig();
+        edgeConfig.mode = OpenCVProcessor.ProcessingMode.EDGE_DETECTION;
+        edgeConfig.cannyLowThreshold = 50.0;
+        edgeConfig.cannyHighThreshold = 150.0;
+        edgeConfig.cannyApertureSize = 3;
+        processor.setProcessingConfig(edgeConfig);
         
         // Create test Mat
         Mat testMat = createTestMat();
@@ -195,6 +198,120 @@ public class OpenCVProcessorTest {
         Mat result = processor.processFrame(testMat);
         
         assertNotNull("Result should not be null", result);
+        assertEquals("Result should have same dimensions as input", testMat.rows(), result.rows());
+        assertEquals("Result should have same dimensions as input", testMat.cols(), result.cols());
+        
+        // Verify callback was called
+        verify(mockCallback, timeout(1000)).onFrameProcessed(any(Mat.class), anyLong());
+        
+        // Cleanup
+        testMat.release();
+        result.release();
+    }
+    
+    @Test
+    public void testProcessFrameHSVColorMode() {
+        processor.initialize();
+        
+        // Set HSV color mode
+        OpenCVProcessor.ProcessingConfig hsvConfig = new OpenCVProcessor.ProcessingConfig();
+        hsvConfig.mode = OpenCVProcessor.ProcessingMode.COLOR_HSV;
+        processor.setProcessingConfig(hsvConfig);
+        
+        // Create test Mat
+        Mat testMat = createTestMat();
+        
+        // Process frame
+        Mat result = processor.processFrame(testMat);
+        
+        assertNotNull("Result should not be null", result);
+        assertEquals("Result should have same dimensions as input", testMat.rows(), result.rows());
+        assertEquals("Result should have same dimensions as input", testMat.cols(), result.cols());
+        
+        // Verify callback was called
+        verify(mockCallback, timeout(1000)).onFrameProcessed(any(Mat.class), anyLong());
+        
+        // Cleanup
+        testMat.release();
+        result.release();
+    }
+    
+    @Test
+    public void testProcessFrameLABColorMode() {
+        processor.initialize();
+        
+        // Set LAB color mode
+        OpenCVProcessor.ProcessingConfig labConfig = new OpenCVProcessor.ProcessingConfig();
+        labConfig.mode = OpenCVProcessor.ProcessingMode.COLOR_LAB;
+        processor.setProcessingConfig(labConfig);
+        
+        // Create test Mat
+        Mat testMat = createTestMat();
+        
+        // Process frame
+        Mat result = processor.processFrame(testMat);
+        
+        assertNotNull("Result should not be null", result);
+        assertEquals("Result should have same dimensions as input", testMat.rows(), result.rows());
+        assertEquals("Result should have same dimensions as input", testMat.cols(), result.cols());
+        
+        // Verify callback was called
+        verify(mockCallback, timeout(1000)).onFrameProcessed(any(Mat.class), anyLong());
+        
+        // Cleanup
+        testMat.release();
+        result.release();
+    }
+    
+    @Test
+    public void testProcessFrameBlurMode() {
+        processor.initialize();
+        
+        // Set blur mode
+        OpenCVProcessor.ProcessingConfig blurConfig = new OpenCVProcessor.ProcessingConfig();
+        blurConfig.mode = OpenCVProcessor.ProcessingMode.BLUR;
+        blurConfig.blurKernelSize = 15;
+        blurConfig.blurSigmaX = 0.0;
+        blurConfig.blurSigmaY = 0.0;
+        processor.setProcessingConfig(blurConfig);
+        
+        // Create test Mat
+        Mat testMat = createTestMat();
+        
+        // Process frame
+        Mat result = processor.processFrame(testMat);
+        
+        assertNotNull("Result should not be null", result);
+        assertEquals("Result should have same dimensions as input", testMat.rows(), result.rows());
+        assertEquals("Result should have same dimensions as input", testMat.cols(), result.cols());
+        
+        // Verify callback was called
+        verify(mockCallback, timeout(1000)).onFrameProcessed(any(Mat.class), anyLong());
+        
+        // Cleanup
+        testMat.release();
+        result.release();
+    }
+    
+    @Test
+    public void testProcessFrameSharpenMode() {
+        processor.initialize();
+        
+        // Set sharpen mode
+        OpenCVProcessor.ProcessingConfig sharpenConfig = new OpenCVProcessor.ProcessingConfig();
+        sharpenConfig.mode = OpenCVProcessor.ProcessingMode.SHARPEN;
+        sharpenConfig.sharpenStrength = 1.0f;
+        processor.setProcessingConfig(sharpenConfig);
+        
+        // Create test Mat
+        Mat testMat = createTestMat();
+        
+        // Process frame
+        Mat result = processor.processFrame(testMat);
+        
+        assertNotNull("Result should not be null", result);
+        assertEquals("Result should have same dimensions as input", testMat.rows(), result.rows());
+        assertEquals("Result should have same dimensions as input", testMat.cols(), result.cols());
         
         // Verify callback was called
         verify(mockCallback, timeout(1000)).onFrameProcessed(any(Mat.class), anyLong());
@@ -319,6 +436,133 @@ public class OpenCVProcessorTest {
             // Expected behavior - method should handle null input appropriately
             assertTrue("Should handle null input appropriately", true);
         }
+    }
+    
+    @Test
+    public void testEdgeDetectionParameters() {
+        processor.initialize();
+        
+        // Test with custom edge detection parameters
+        OpenCVProcessor.ProcessingConfig edgeConfig = new OpenCVProcessor.ProcessingConfig();
+        edgeConfig.mode = OpenCVProcessor.ProcessingMode.EDGE_DETECTION;
+        edgeConfig.cannyLowThreshold = 100.0;
+        edgeConfig.cannyHighThreshold = 200.0;
+        edgeConfig.cannyApertureSize = 5;
+        processor.setProcessingConfig(edgeConfig);
+        
+        // Create test Mat
+        Mat testMat = createTestMat();
+        
+        // Process frame
+        Mat result = processor.processFrame(testMat);
+        
+        assertNotNull("Result should not be null", result);
+        
+        // Cleanup
+        testMat.release();
+        result.release();
+    }
+    
+    @Test
+    public void testBlurParameters() {
+        processor.initialize();
+        
+        // Test with custom blur parameters
+        OpenCVProcessor.ProcessingConfig blurConfig = new OpenCVProcessor.ProcessingConfig();
+        blurConfig.mode = OpenCVProcessor.ProcessingMode.BLUR;
+        blurConfig.blurKernelSize = 21; // Should be adjusted to odd number
+        blurConfig.blurSigmaX = 2.0;
+        blurConfig.blurSigmaY = 2.0;
+        processor.setProcessingConfig(blurConfig);
+        
+        // Create test Mat
+        Mat testMat = createTestMat();
+        
+        // Process frame
+        Mat result = processor.processFrame(testMat);
+        
+        assertNotNull("Result should not be null", result);
+        
+        // Cleanup
+        testMat.release();
+        result.release();
+    }
+    
+    @Test
+    public void testSharpenParameters() {
+        processor.initialize();
+        
+        // Test with custom sharpen parameters
+        OpenCVProcessor.ProcessingConfig sharpenConfig = new OpenCVProcessor.ProcessingConfig();
+        sharpenConfig.mode = OpenCVProcessor.ProcessingMode.SHARPEN;
+        sharpenConfig.sharpenStrength = 2.0f;
+        processor.setProcessingConfig(sharpenConfig);
+        
+        // Create test Mat
+        Mat testMat = createTestMat();
+        
+        // Process frame
+        Mat result = processor.processFrame(testMat);
+        
+        assertNotNull("Result should not be null", result);
+        
+        // Cleanup
+        testMat.release();
+        result.release();
+    }
+    
+    @Test
+    public void testProcessingModeEnumValues() {
+        // Test that all processing modes are available
+        OpenCVProcessor.ProcessingMode[] modes = OpenCVProcessor.ProcessingMode.values();
+        
+        assertTrue("Should have PASSTHROUGH mode", 
+                java.util.Arrays.asList(modes).contains(OpenCVProcessor.ProcessingMode.PASSTHROUGH));
+        assertTrue("Should have GRAYSCALE mode", 
+                java.util.Arrays.asList(modes).contains(OpenCVProcessor.ProcessingMode.GRAYSCALE));
+        assertTrue("Should have EDGE_DETECTION mode", 
+                java.util.Arrays.asList(modes).contains(OpenCVProcessor.ProcessingMode.EDGE_DETECTION));
+        assertTrue("Should have COLOR_HSV mode", 
+                java.util.Arrays.asList(modes).contains(OpenCVProcessor.ProcessingMode.COLOR_HSV));
+        assertTrue("Should have COLOR_LAB mode", 
+                java.util.Arrays.asList(modes).contains(OpenCVProcessor.ProcessingMode.COLOR_LAB));
+        assertTrue("Should have BLUR mode", 
+                java.util.Arrays.asList(modes).contains(OpenCVProcessor.ProcessingMode.BLUR));
+        assertTrue("Should have SHARPEN mode", 
+                java.util.Arrays.asList(modes).contains(OpenCVProcessor.ProcessingMode.SHARPEN));
+    }
+    
+    @Test
+    public void testProcessingConfigDefaults() {
+        // Test default processing configuration
+        OpenCVProcessor.ProcessingConfig config = new OpenCVProcessor.ProcessingConfig();
+        
+        assertEquals("Default mode should be GRAYSCALE", 
+                OpenCVProcessor.ProcessingMode.GRAYSCALE, config.mode);
+        assertTrue("Performance optimization should be enabled by default", 
+                config.enablePerformanceOptimization);
+        assertEquals("Default max processing time should be 50ms", 
+                50, config.maxProcessingTimeMs);
+        
+        // Test edge detection defaults
+        assertEquals("Default Canny low threshold should be 50.0", 
+                50.0, config.cannyLowThreshold, 0.001);
+        assertEquals("Default Canny high threshold should be 150.0", 
+                150.0, config.cannyHighThreshold, 0.001);
+        assertEquals("Default Canny aperture size should be 3", 
+                3, config.cannyApertureSize);
+        
+        // Test blur defaults
+        assertEquals("Default blur kernel size should be 15", 
+                15, config.blurKernelSize);
+        assertEquals("Default blur sigma X should be 0.0", 
+                0.0, config.blurSigmaX, 0.001);
+        assertEquals("Default blur sigma Y should be 0.0", 
+                0.0, config.blurSigmaY, 0.001);
+        
+        // Test sharpen defaults
+        assertEquals("Default sharpen strength should be 1.0", 
+                1.0f, config.sharpenStrength, 0.001f);
     }
     
     /**

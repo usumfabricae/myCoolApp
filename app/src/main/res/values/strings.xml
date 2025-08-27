@@ -15,4 +15,15 @@
     <!-- Android 10 privacy related strings -->
     <string name="android_10_privacy_notice">Enhanced Privacy Controls</string>
     <string name="android_10_camera_privacy_message">Android 10 provides enhanced camera privacy controls. You can manage camera access for this app in your device settings at any time.</string>
+    
+    <!-- Processing mode strings -->
+    <string-array name="processing_modes">
+        <item>Passthrough</item>
+        <item>Grayscale</item>
+        <item>Edge Detection</item>
+        <item>HSV Color</item>
+        <item>LAB Color</item>
+        <item>Blur</item>
+        <item>Sharpen</item>
+    </string-array>
 </resources>

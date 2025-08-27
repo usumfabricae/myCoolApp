@@ -5,12 +5,18 @@ import androidx.appcompat.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
 import android.widget.Toast;
+import android.widget.Spinner;
+import android.widget.ArrayAdapter;
+import android.view.View;
+import android.widget.AdapterView;
 import com.example.opencvcamerastream.permissions.PermissionHandler;
 import com.example.opencvcamerastream.processing.OpenCVProcessor;
 import com.example.opencvcamerastream.processing.FrameProcessor;
 import com.example.opencvcamerastream.error.ErrorHandler;
 import com.example.opencvcamerastream.error.ErrorDialogManager;
 import com.example.opencvcamerastream.error.PerformanceMonitor;
+import com.example.opencvcamerastream.performance.PerformanceMetricsCollector;
+import com.example.opencvcamerastream.performance.PerformanceDisplayManager;
 import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
@@ -36,10 +42,20 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
     private boolean isAppInForeground = false;
     private boolean isOpenCVInitialized = false;
     
+    // Processing mode selection
+    private Spinner processingModeSpinner;
+    private ArrayAdapter<String> processingModeAdapter;
+    
+    // Additional components referenced in the code
+    private com.example.opencvcamerastream.processing.FrameProcessor frameProcessor;
+    private com.example.opencvcamerastream.display.DisplayManager displayManager;
+    
     // Error handling and performance monitoring
     private ErrorHandler errorHandler;
     private ErrorDialogManager errorDialogManager;
     private PerformanceMonitor performanceMonitor;
+    private PerformanceMetricsCollector performanceMetricsCollector;
+    private PerformanceDisplayManager performanceDisplayManager;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -59,6 +75,9 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         
         // Initialize display manager
         initializeDisplayManager();
+        
+        // Initialize processing mode selection interface
+        initializeProcessingModeSelection();
         
         // TODO: Set up Camera2 API with privacy controls (Task 4)
     }
@@ -198,6 +217,45 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
                 Log.d(TAG, "Frame drop recommended: " + reason);
             }
         });
+        
+        // Initialize performance metrics collector
+        performanceMetricsCollector = new PerformanceMetricsCollector(performanceMonitor);
+        performanceMetricsCollector.setCallback(new PerformanceMetricsCollector.PerformanceMetricsCallback() {
+            @Override
+            public void onFrameRateUpdate(@NonNull PerformanceMetricsCollector.FrameRateMetrics metrics) {
+                // Update performance display
+                if (performanceDisplayManager != null) {
+                    PerformanceMonitor.PerformanceMetrics systemMetrics = performanceMonitor.getCurrentMetrics();
+                    performanceDisplayManager.updateMetrics(metrics, systemMetrics);
+                }
+            }
+            
+            @Override
+            public void onPerformanceAdjustment(@NonNull PerformanceMetricsCollector.PerformanceAdjustment adjustment) {
+                Log.i(TAG, "Performance adjustment applied: " + adjustment);
+                
+                runOnUiThread(() -> {
+                    String message = "Performance adjusted: " + adjustment.reason;
+                    Toast.makeText(MainActivity.this, message, Toast.LENGTH_SHORT).show();
+                });
+                
+                // Show adjustment in performance display
+                if (performanceDisplayManager != null) {
+                    performanceDisplayManager.showPerformanceAdjustment(adjustment);
+                }
+                
+                // Apply adjustment to processing pipeline
+                applyPerformanceAdjustment(adjustment);
+            }
+            
+            @Override
+            public void onFrameDropRecommended(@NonNull String reason) {
+                Log.d(TAG, "Frame drop recommended by metrics collector: " + reason);
+            }
+        });
+        
+        // Initialize performance display manager
+        performanceDisplayManager = new PerformanceDisplayManager(this);
         
         Log.d(TAG, "Error handling system initialized");
     }
@@ -349,6 +407,124 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             Log.e(TAG, "TextureView not found in layout");
             Toast.makeText(this, "Display setup error", Toast.LENGTH_LONG).show();
         }
+    }
+    
+    /**
+     * Initialize processing mode selection interface
+     * Requirement 2.2: Create processing mode selection interface
+     */
+    private void initializeProcessingModeSelection() {
+        Log.d(TAG, "Initializing processing mode selection");
+        
+        processingModeSpinner = findViewById(R.id.processingModeSpinner);
+        if (processingModeSpinner == null) {
+            Log.e(TAG, "Processing mode spinner not found in layout");
+            return;
+        }
+        
+        // Create adapter with processing mode options
+        String[] processingModes = getResources().getStringArray(R.array.processing_modes);
+        processingModeAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, processingModes);
+        processingModeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        
+        // Set adapter to spinner
+        processingModeSpinner.setAdapter(processingModeAdapter);
+        
+        // Set default selection (Grayscale)
+        processingModeSpinner.setSelection(1); // Index 1 = Grayscale
+        
+        // Set up selection listener
+        processingModeSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                onProcessingModeSelected(position);
+            }
+            
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+                // Do nothing
+            }
+        });
+        
+        Log.d(TAG, "Processing mode selection initialized");
+    }
+    
+    /**
+     * Handle processing mode selection
+     * Updates OpenCV processor configuration based on selected mode
+     */
+    private void onProcessingModeSelected(int position) {
+        if (openCVProcessor == null) {
+            Log.w(TAG, "OpenCV processor not initialized, cannot change processing mode");
+            return;
+        }
+        
+        OpenCVProcessor.ProcessingMode selectedMode;
+        String modeName;
+        
+        // Map spinner position to processing mode
+        switch (position) {
+            case 0: // Passthrough
+                selectedMode = OpenCVProcessor.ProcessingMode.PASSTHROUGH;
+                modeName = "Passthrough";
+                break;
+            case 1: // Grayscale
+                selectedMode = OpenCVProcessor.ProcessingMode.GRAYSCALE;
+                modeName = "Grayscale";
+                break;
+            case 2: // Edge Detection
+                selectedMode = OpenCVProcessor.ProcessingMode.EDGE_DETECTION;
+                modeName = "Edge Detection";
+                break;
+            case 3: // HSV Color
+                selectedMode = OpenCVProcessor.ProcessingMode.COLOR_HSV;
+                modeName = "HSV Color";
+                break;
+            case 4: // LAB Color
+                selectedMode = OpenCVProcessor.ProcessingMode.COLOR_LAB;
+                modeName = "LAB Color";
+                break;
+            case 5: // Blur
+                selectedMode = OpenCVProcessor.ProcessingMode.BLUR;
+                modeName = "Blur";
+                break;
+            case 6: // Sharpen
+                selectedMode = OpenCVProcessor.ProcessingMode.SHARPEN;
+                modeName = "Sharpen";
+                break;
+            default:
+                selectedMode = OpenCVProcessor.ProcessingMode.GRAYSCALE;
+                modeName = "Grayscale";
+                break;
+        }
+        
+        // Update processing configuration
+        OpenCVProcessor.ProcessingConfig config = new OpenCVProcessor.ProcessingConfig();
+        config.mode = selectedMode;
+        config.enablePerformanceOptimization = true;
+        config.maxProcessingTimeMs = 50;
+        
+        // Set processing-specific parameters
+        switch (selectedMode) {
+            case EDGE_DETECTION:
+                config.cannyLowThreshold = 50.0;
+                config.cannyHighThreshold = 150.0;
+                config.cannyApertureSize = 3;
+                break;
+            case BLUR:
+                config.blurKernelSize = 15;
+                config.blurSigmaX = 0.0;
+                config.blurSigmaY = 0.0;
+                break;
+            case SHARPEN:
+                config.sharpenStrength = 1.0f;
+                break;
+        }
+        
+        openCVProcessor.setProcessingConfig(config);
+        
+        Log.i(TAG, "Processing mode changed to: " + modeName);
+        Toast.makeText(this, "Processing mode: " + modeName, Toast.LENGTH_SHORT).show();
     }
     
     /**
@@ -674,7 +850,170 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
      * Handle permission denial scenarios
      */
     private void handlePermissionDenial(boolean isPermanentlyDenied) {
-        // For now, we'll just log and show a message
+        // For now, we show error message and potentially exit
+        Log.w(TAG, "Handling permission denial, permanently denied: " + isPermanentlyDenied);
+        
+        if (isPermanentlyDenied) {
+            // Show dialog directing user to settings
+            runOnUiThread(() -> {
+                if (errorDialogManager != null) {
+                    ErrorHandler.ErrorInfo errorInfo = new ErrorHandler.ErrorInfo(
+                        ErrorHandler.ErrorCategory.PERMISSION,
+                        "Camera permission permanently denied",
+                        "Please enable camera permission in Settings to use this app",
+                        null
+                    );
+                    errorDialogManager.showErrorDialog(errorInfo, null);
+                }
+            });
+        }
+    }
+    
+    /**
+     * Update processing configuration based on performance level
+     * Requirement 5.3: Automatically adjust processing parameters for optimal performance
+     */
+    private void updateProcessingConfiguration(@NonNull PerformanceMonitor.PerformanceLevel level) {
+        Log.d(TAG, "Updating processing configuration for level: " + level);
+        
+        if (openCVProcessor != null) {
+            PerformanceMonitor.ProcessingRecommendation recommendation = 
+                performanceMonitor.getProcessingRecommendation();
+            
+            // Create new processing config based on recommendation
+            OpenCVProcessor.ProcessingConfig config = new OpenCVProcessor.ProcessingConfig();
+            
+            switch (level) {
+                case HIGH:
+                    config.mode = OpenCVProcessor.ProcessingMode.GRAYSCALE;
+                    config.enablePerformanceOptimization = true;
+                    config.maxProcessingTimeMs = 50;
+                    break;
+                    
+                case MEDIUM:
+                    config.mode = OpenCVProcessor.ProcessingMode.GRAYSCALE;
+                    config.enablePerformanceOptimization = true;
+                    config.maxProcessingTimeMs = 75;
+                    break;
+                    
+                case LOW:
+                    config.mode = OpenCVProcessor.ProcessingMode.PASSTHROUGH;
+                    config.enablePerformanceOptimization = true;
+                    config.maxProcessingTimeMs = 100;
+                    break;
+                    
+                case CRITICAL:
+                    config.mode = OpenCVProcessor.ProcessingMode.PASSTHROUGH;
+                    config.enablePerformanceOptimization = true;
+                    config.maxProcessingTimeMs = 150;
+                    break;
+            }
+            
+            openCVProcessor.setProcessingConfig(config);
+            Log.i(TAG, "Processing configuration updated: " + config.mode + 
+                      ", maxTime: " + config.maxProcessingTimeMs + "ms");
+        }
+    }
+    
+    /**
+     * Apply performance adjustment from metrics collector
+     */
+    private void applyPerformanceAdjustment(@NonNull PerformanceMetricsCollector.PerformanceAdjustment adjustment) {
+        Log.d(TAG, "Applying performance adjustment: " + adjustment);
+        
+        // Update frame processor settings if available
+        if (frameProcessor != null) {
+            // Apply frame dropping settings
+            if (performanceMetricsCollector != null) {
+                performanceMetricsCollector.setFrameDroppingEnabled(adjustment.enableFrameDropping);
+                performanceMetricsCollector.setFrameSkipRatio(adjustment.frameSkipRatio);
+            }
+        }
+        
+        // Update OpenCV processor settings
+        if (openCVProcessor != null) {
+            OpenCVProcessor.ProcessingConfig config = new OpenCVProcessor.ProcessingConfig();
+            
+            // Adjust processing mode based on quality reduction
+            if (adjustment.qualityReduction <= 0.5f) {
+                config.mode = OpenCVProcessor.ProcessingMode.PASSTHROUGH;
+            } else {
+                config.mode = OpenCVProcessor.ProcessingMode.GRAYSCALE;
+            }
+            
+            config.enablePerformanceOptimization = true;
+            config.maxProcessingTimeMs = adjustment.maxProcessingTimeMs;
+            
+            openCVProcessor.setProcessingConfig(config);
+        }
+    }
+    
+    @Override
+    protected void onResume() {
+        super.onResume();
+        isAppInForeground = true;
+        
+        Log.d(TAG, "Activity resumed, initializing OpenCV and checking camera permissions");
+        
+        // Start performance monitoring
+        if (performanceMetricsCollector != null) {
+            performanceMetricsCollector.startMonitoring();
+        }
+        
+        // Initialize OpenCV when activity resumes
+        if (!OpenCVLoader.initDebug()) {
+            Log.d(TAG, "Internal OpenCV library not found. Using OpenCV Manager for initialization");
+            OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION, this, openCVLoaderCallback);
+        } else {
+            Log.d(TAG, "OpenCV library found inside package. Using it!");
+            openCVLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
+        }
+        
+        // Check and request camera permission when app comes to foreground
+        // This handles Android 10 background activity restrictions
+        if (permissionHandler != null) {
+            permissionHandler.requestCameraPermission();
+        }
+        
+        // Restart frame processor if OpenCV is initialized
+        if (isOpenCVInitialized && frameProcessor != null && !frameProcessor.isProcessing()) {
+            Log.d(TAG, "Restarting frame processor on resume");
+            frameProcessor.start();
+        }
+        
+        // Restart camera preview if it was stopped and we have permissions
+        if (cameraManager != null && cameraManager.isInitialized() && 
+            !cameraManager.isPreviewActive() && permissionHandler != null && 
+            permissionHandler.isCameraPermissionGranted()) {
+            Log.d(TAG, "Restarting camera preview on resume");
+            cameraManager.startPreview();
+        }
+    }
+    
+    @Override
+    protected void onPause() {
+        super.onPause();
+        isAppInForeground = false;
+        
+        Log.d(TAG, "Activity paused");
+        
+        // Stop performance monitoring
+        if (performanceMetricsCollector != null) {
+            performanceMetricsCollector.stopMonitoring();
+        }
+        
+        // Requirement 5.4: Properly release camera resources when app is backgrounded
+        if (cameraManager != null) {
+            Log.d(TAG, "Stopping camera preview due to app backgrounding");
+            cameraManager.stopPreview();
+        }
+        
+        // Stop frame processor to save resources
+        if (frameProcessor != null && frameProcessor.isProcessing()) {
+            Log.d(TAG, "Stopping frame processor due to app backgrounding");
+            frameProcessor.stop();
+        }
+    }'ll just log and show a message
         // In a production app, you might want to:
         // - Disable camera-related UI elements
         // - Show alternative content
