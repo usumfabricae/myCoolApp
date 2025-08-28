@@ -627,17 +627,6 @@ workflows:
         notify:
           success: true
           failure: true
-        subject: "Android Development Build $CM_BUILD_ID - $CM_BRANCH"
-        body: |
-          Build Details:
-          - Build ID: $CM_BUILD_ID
-          - Branch: $CM_BRANCH
-          - Commit: $CM_COMMIT
-          - Java Version: Java 17
-          - Android Gradle Plugin: 8.1.2
-          - Target SDK: Android 10 (API 29)
-          
-          Build completed successfully with comprehensive testing and validation.
       
       # Uncomment to publish to Google Play (requires setup)
       # google_play:
@@ -854,18 +843,6 @@ workflows:
         notify:
           success: true
           failure: true
-        subject: "Android Release Build $CM_BUILD_ID - $CM_TAG"
-        body: |
-          Release Build Details:
-          - Build ID: $CM_BUILD_ID
-          - Tag: $CM_TAG
-          - Commit: $CM_COMMIT
-          - Java Version: Java 17
-          - Android Gradle Plugin: 8.1.2
-          - Target SDK: Android 10 (API 29)
-          
-          Release build completed successfully with comprehensive testing and validation.
-          All Android 10 compatibility requirements verified.
 
   android-test-workflow:
     name: Android Test-Only (Java 17 + AGP 8.1.2)
@@ -1072,13 +1049,3 @@ workflows:
         notify:
           success: false
           failure: true
-        subject: "Android Test-Only Build $CM_BUILD_ID - $CM_BRANCH (FAILED)"
-        body: |
-          Test-Only Build Failure:
-          - Build ID: $CM_BUILD_ID
-          - Branch: $CM_BRANCH
-          - Commit: $CM_COMMIT
-          - Java Version: Java 17
-          - Android Gradle Plugin: 8.1.2
-          
-          Please check the build logs for test failures or Android 10 compatibility issues.
