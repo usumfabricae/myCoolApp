@@ -1135,7 +1135,12 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         }
         
         Log.i(TAG, "Activity pause completed - resources properly released for Android 10 compliance");
-    }'ll just log and show a message
+    }
+    
+    /**
+     * Handle camera permission denial with Android 10 compliance
+     */
+    private void handlePermissionDenial(boolean isPermanentlyDenied) {
         // In a production app, you might want to:
         // - Disable camera-related UI elements
         // - Show alternative content
