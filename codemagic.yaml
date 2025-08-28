@@ -907,14 +907,46 @@ workflows:
           echo "export GRADLE_EXECUTABLE='$GRADLE_EXECUTABLE'" >> $CM_BUILD_DIR/android_env.sh
           echo "✅ Test-only environment configured"
       
+      - name: Clean build and validate resources
+        script: |
+          source $CM_BUILD_DIR/android_env.sh
+          cd "$ANDROID_PROJECT_DIR"
+          
+          echo "=== CLEAN BUILD AND RESOURCE VALIDATION ==="
+          echo "Java version: $(java -version 2>&1 | head -1)"
+          echo "Gradle version: $($GRADLE_EXECUTABLE --version | head -1)"
+          
+          # Clean build to avoid cache issues
+          echo "Cleaning build cache..."
+          $GRADLE_EXECUTABLE clean --stacktrace
+          
+          # Validate resources first
+          echo "Validating Android resources..."
+          if ! $GRADLE_EXECUTABLE processDebugResources --stacktrace --info; then
+            echo "❌ Resource processing failed"
+            echo "=== RESOURCE PROCESSING TROUBLESHOOTING ==="
+            
+            # Check for common resource issues
+            echo "Checking layout files..."
+            find app/src/main/res/layout -name "*.xml" -exec echo "Layout: {}" \;
+            
+            echo "Checking drawable files..."
+            find app/src/main/res/drawable -name "*.xml" -exec echo "Drawable: {}" \;
+            
+            echo "Checking values files..."
+            find app/src/main/res/values -name "*.xml" -exec echo "Values: {}" \;
+            
+            exit 1
+          else
+            echo "✅ Resources processed successfully"
+          fi
+      
       - name: Run unit tests with comprehensive coverage
         script: |
           source $CM_BUILD_DIR/android_env.sh
           cd "$ANDROID_PROJECT_DIR"
           
           echo "=== COMPREHENSIVE UNIT TESTING WITH COVERAGE ==="
-          echo "Java version: $(java -version 2>&1 | head -1)"
-          echo "Gradle version: $($GRADLE_EXECUTABLE --version | head -1)"
           
           # Run tests with coverage
           if ! $GRADLE_EXECUTABLE testDebugUnitTest jacocoTestReport --stacktrace --info; then
