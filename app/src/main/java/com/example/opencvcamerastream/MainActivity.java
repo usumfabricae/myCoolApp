@@ -781,12 +781,6 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
     // Camera components
     private com.example.opencvcamerastream.camera.CameraManager cameraManager;
     
-    // Display components
-    private com.example.opencvcamerastream.display.DisplayManager displayManager;
-    
-    // Frame processing pipeline
-    private com.example.opencvcamerastream.processing.FrameProcessor frameProcessor;
-    
     /**
      * Initialize camera components after permission is granted
      */
@@ -1010,149 +1004,11 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         }
     }
     
-    @Override
-    protected void onResume() {
-        super.onResume();
-        isAppInForeground = true;
-        
-        Log.d(TAG, "Activity resumed - implementing comprehensive lifecycle management");
-        
-        // Start performance monitoring
-        if (performanceMetricsCollector != null) {
-            performanceMetricsCollector.startMonitoring();
-            Log.d(TAG, "Performance monitoring restarted");
-        }
-        
-        // Resume performance display
-        if (performanceDisplayManager != null) {
-            performanceDisplayManager.onResume();
-            Log.d(TAG, "Performance display resumed");
-        }
-        
-        // Initialize OpenCV when activity resumes
-        if (!OpenCVLoader.initDebug()) {
-            Log.d(TAG, "Internal OpenCV library not found. Using OpenCV Manager for initialization");
-            OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION, this, openCVLoaderCallback);
-        } else {
-            Log.d(TAG, "OpenCV library found inside package. Using it!");
-            openCVLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
-        }
-        
-        // Check and request camera permission when app comes to foreground
-        // This handles Android 10 background activity restrictions (Requirement 6.3)
-        if (permissionHandler != null) {
-            permissionHandler.requestCameraPermission();
-        }
-        
-        // Restart frame processor if OpenCV is initialized
-        if (isOpenCVInitialized && frameProcessor != null && !frameProcessor.isProcessing()) {
-            Log.d(TAG, "Restarting frame processor on resume");
-            if (frameProcessor.start()) {
-                Log.i(TAG, "Frame processor successfully restarted");
-            } else {
-                Log.w(TAG, "Failed to restart frame processor");
-            }
-        }
-        
-        // Restart camera preview if it was stopped and we have permissions
-        if (cameraManager != null && cameraManager.isInitialized() && 
-            !cameraManager.isPreviewActive() && permissionHandler != null && 
-            permissionHandler.isCameraPermissionGranted()) {
-            Log.d(TAG, "Restarting camera preview on resume");
-            if (cameraManager.startPreview()) {
-                Log.i(TAG, "Camera preview successfully restarted");
-            } else {
-                Log.w(TAG, "Failed to restart camera preview");
-            }
-        }
-        
-        // Resume display manager
-        if (displayManager != null) {
-            displayManager.onResume();
-            Log.d(TAG, "Display manager resumed");
-        }
-        
-        // Reset error handler state for fresh start
-        if (errorHandler != null) {
-            errorHandler.onActivityResumed();
-            Log.d(TAG, "Error handler resumed");
-        }
-        
-        Log.i(TAG, "Activity resume completed - all components restarted");
-    }
+
     
-    @Override
-    protected void onPause() {
-        super.onPause();
-        isAppInForeground = false;
-        
-        Log.d(TAG, "Activity paused - implementing comprehensive resource cleanup");
-        
-        // Stop performance monitoring to save resources
-        if (performanceMetricsCollector != null) {
-            performanceMetricsCollector.stopMonitoring();
-            Log.d(TAG, "Performance monitoring stopped");
-        }
-        
-        // Pause performance display
-        if (performanceDisplayManager != null) {
-            performanceDisplayManager.onPause();
-            Log.d(TAG, "Performance display paused");
-        }
-        
-        // Requirement 5.4: Properly release camera resources when app is backgrounded
-        // Android 10 background activity restrictions (Requirement 6.3)
-        if (cameraManager != null && cameraManager.isPreviewActive()) {
-            Log.d(TAG, "Stopping camera preview due to app backgrounding (Android 10 compliance)");
-            cameraManager.stopPreview();
-        }
-        
-        // Stop frame processor to save resources and comply with background restrictions
-        if (frameProcessor != null && frameProcessor.isProcessing()) {
-            Log.d(TAG, "Stopping frame processor due to app backgrounding");
-            if (frameProcessor.stop()) {
-                Log.i(TAG, "Frame processor successfully stopped");
-            } else {
-                Log.w(TAG, "Frame processor stop encountered issues");
-            }
-        }
-        
-        // Pause display manager to release graphics resources
-        if (displayManager != null) {
-            displayManager.onPause();
-            Log.d(TAG, "Display manager paused");
-        }
-        
-        // Notify error handler of pause state
-        if (errorHandler != null) {
-            errorHandler.onActivityPaused();
-            Log.d(TAG, "Error handler paused");
-        }
-        
-        // Clear any pending UI updates to prevent memory leaks
-        if (performanceDisplayManager != null) {
-            performanceDisplayManager.clearPendingUpdates();
-        }
-        
-        Log.i(TAG, "Activity pause completed - resources properly released for Android 10 compliance");
-    }
+
     
-    /**
-     * Handle camera permission denial with Android 10 compliance
-     */
-    private void handlePermissionDenial(boolean isPermanentlyDenied) {
-        // In a production app, you might want to:
-        // - Disable camera-related UI elements
-        // - Show alternative content
-        // - Guide user to settings if permanently denied
-        
-        Log.w(TAG, "Handling permission denial. App functionality limited.");
-        
-        if (isPermanentlyDenied) {
-            // Could show a persistent notification or different UI state
-            Log.w(TAG, "User needs to manually enable permission in Settings");
-        }
-    }
+
     
     @Override
     protected void onDestroy() {
@@ -1314,41 +1170,7 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         }
     }
     
-    /**
-     * Update processing configuration based on performance level
-     */
-    private void updateProcessingConfiguration(@NonNull PerformanceMonitor.PerformanceLevel performanceLevel) {
-        if (openCVProcessor == null) {
-            return;
-        }
-        
-        // Get processing recommendation
-        PerformanceMonitor.ProcessingRecommendation recommendation = 
-                performanceMonitor.getProcessingRecommendation();
-        
-        // Update OpenCV processor configuration
-        OpenCVProcessor.ProcessingConfig config = new OpenCVProcessor.ProcessingConfig();
-        config.enablePerformanceOptimization = true;
-        config.maxProcessingTimeMs = recommendation.maxProcessingTimeMs;
-        
-        // Adjust processing mode based on performance level
-        switch (performanceLevel) {
-            case HIGH:
-                config.mode = OpenCVProcessor.ProcessingMode.GRAYSCALE;
-                break;
-            case MEDIUM:
-                config.mode = OpenCVProcessor.ProcessingMode.GRAYSCALE;
-                break;
-            case LOW:
-            case CRITICAL:
-                config.mode = OpenCVProcessor.ProcessingMode.PASSTHROUGH;
-                break;
-        }
-        
-        openCVProcessor.setProcessingConfig(config);
-        
-        Log.d(TAG, "Processing configuration updated for performance level: " + performanceLevel);
-    }
+
     
     /**
      * Restart system components for recovery
