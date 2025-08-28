@@ -892,16 +892,28 @@ workflows:
           echo "ndk.dir=\$ANDROID_NDK_ROOT" >> "local.properties"
           echo "cmake.dir=\$ANDROID_CMAKE_ROOT" >> "local.properties"
           
-          # Set up Gradle executable
+          # Set up Gradle executable with line ending fix
           if [ -f "gradlew" ]; then
+            # Fix line endings for Unix compatibility (convert Windows CRLF to Unix LF)
+            echo "Fixing gradlew line endings for Unix compatibility..."
+            if command -v dos2unix >/dev/null 2>&1; then
+              dos2unix gradlew
+            else
+              # Alternative method if dos2unix is not available
+              sed -i 's/\r$//' gradlew
+            fi
+            
             chmod +x gradlew
             if ./gradlew --version >/dev/null 2>&1; then
               GRADLE_EXECUTABLE="./gradlew"
+              echo "✅ Using project gradlew wrapper (line endings fixed)"
             else
               GRADLE_EXECUTABLE="gradle"
+              echo "⚠️  gradlew exists but not functional, using system gradle"
             fi
           else
             GRADLE_EXECUTABLE="gradle"
+            echo "✅ Using system gradle"
           fi
           
           echo "export GRADLE_EXECUTABLE='$GRADLE_EXECUTABLE'" >> $CM_BUILD_DIR/android_env.sh
