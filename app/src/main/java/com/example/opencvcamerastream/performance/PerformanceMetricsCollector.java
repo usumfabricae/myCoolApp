@@ -413,4 +413,28 @@ public class PerformanceMetricsCollector {
         setFrameDroppingEnabled(adjustment.enableFrameDropping);
         setFrameSkipRatio(adjustment.frameSkipRatio);
     }
+    
+    /**
+     * Release performance metrics collector resources
+     * Called during activity destruction
+     */
+    public void release() {
+        Log.d(TAG, "Releasing PerformanceMetricsCollector resources");
+        
+        // Stop monitoring
+        stopMonitoring();
+        
+        // Clear callback to prevent memory leaks
+        callback = null;
+        
+        // Reset all counters
+        resetCounters();
+        
+        // Clear performance state
+        isFrameDroppingEnabled = false;
+        currentFrameSkipRatio = 0;
+        lastRecommendedLevel = PerformanceMonitor.PerformanceLevel.HIGH;
+        
+        Log.i(TAG, "PerformanceMetricsCollector resources released");
+    }
 }

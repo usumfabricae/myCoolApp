@@ -295,26 +295,107 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
     }
     
     /**
-     * Release display resources
+     * Handle activity onResume lifecycle event
+     * Requirement 5.4: Proper lifecycle management
+     */
+    public void onResume() {
+        Log.d(TAG, "DisplayManager onResume - restoring display state");
+        
+        // Reset performance tracking
+        frameCount = 0;
+        lastFrameTime = 0;
+        
+        // If TextureView is available, ensure surface is ready
+        if (textureView != null && textureView.isAvailable()) {
+            SurfaceTexture surfaceTexture = textureView.getSurfaceTexture();
+            if (surfaceTexture != null && surface == null) {
+                Log.d(TAG, "Recreating surface after resume");
+                surface = new Surface(surfaceTexture);
+                isDisplayReady = true;
+                
+                if (displayCallback != null) {
+                    displayCallback.onDisplayReady();
+                }
+            }
+        }
+        
+        Log.i(TAG, "DisplayManager resume completed");
+    }
+    
+    /**
+     * Handle activity onPause lifecycle event
+     * Requirement 5.4: Proper resource cleanup during pause
+     * Requirement 6.3: Android 10 background activity restrictions
+     */
+    public void onPause() {
+        Log.d(TAG, "DisplayManager onPause - pausing display operations");
+        
+        // Don't release the surface completely, just mark as not ready
+        // This allows for faster resume while complying with Android 10 restrictions
+        isDisplayReady = false;
+        
+        // Clear any pending frame updates
+        frameCount = 0;
+        lastFrameTime = 0;
+        
+        Log.i(TAG, "DisplayManager pause completed - display operations suspended");
+    }
+    
+    /**
+     * Clear any pending updates to prevent memory leaks
+     * Called during activity pause to ensure clean state
+     */
+    public void clearPendingUpdates() {
+        Log.d(TAG, "Clearing pending display updates");
+        
+        // Reset performance counters
+        frameCount = 0;
+        lastFrameTime = 0;
+        
+        // Clear transform matrix
+        transformMatrix.reset();
+        
+        Log.d(TAG, "Pending display updates cleared");
+    }
+    
+    /**
+     * Release display resources completely
+     * Called during activity destruction
      */
     public void release() {
-        Log.d(TAG, "Releasing display resources");
+        Log.d(TAG, "Releasing display resources completely");
         
         isDisplayReady = false;
         
+        // Clear performance tracking
+        frameCount = 0;
+        lastFrameTime = 0;
+        
+        // Release surface
         if (surface != null) {
             surface.release();
             surface = null;
         }
         
+        // Clear TextureView reference
         if (textureView != null) {
             textureView.setSurfaceTextureListener(null);
             textureView = null;
         }
         
+        // Clear callback
         displayCallback = null;
         
-        Log.i(TAG, "Display resources released");
+        // Clear transform matrix
+        transformMatrix.reset();
+        
+        // Reset dimensions
+        frameWidth = 0;
+        frameHeight = 0;
+        displayWidth = 0;
+        displayHeight = 0;
+        
+        Log.i(TAG, "Display resources completely released");
     }
     
     // TextureView.SurfaceTextureListener implementation

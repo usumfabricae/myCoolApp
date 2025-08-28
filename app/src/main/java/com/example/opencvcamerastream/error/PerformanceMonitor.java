@@ -321,6 +321,29 @@ public class PerformanceMonitor {
     
     // Private helper methods
     
+    /**
+     * Release performance monitor resources
+     * Called during activity destruction
+     */
+    public void release() {
+        Log.d(TAG, "Releasing PerformanceMonitor resources");
+        
+        // Clear callback to prevent memory leaks
+        callback = null;
+        
+        // Reset all counters
+        resetCounters();
+        
+        // Clear cached metrics
+        cachedMetrics = null;
+        lastMemoryCheckTime = 0;
+        
+        // Reset performance level to initial state
+        currentPerformanceLevel = isLowMemoryDevice ? PerformanceLevel.LOW : PerformanceLevel.HIGH;
+        
+        Log.i(TAG, "PerformanceMonitor resources released");
+    }
+    
     private void classifyDevice() {
         try {
             ActivityManager.MemoryInfo memoryInfo = new ActivityManager.MemoryInfo();

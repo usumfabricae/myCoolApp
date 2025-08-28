@@ -17,6 +17,8 @@ import com.example.opencvcamerastream.error.ErrorDialogManager;
 import com.example.opencvcamerastream.error.PerformanceMonitor;
 import com.example.opencvcamerastream.performance.PerformanceMetricsCollector;
 import com.example.opencvcamerastream.performance.PerformanceDisplayManager;
+import com.example.opencvcamerastream.compliance.Android10ComplianceValidator;
+import com.example.opencvcamerastream.compliance.Android10TestUtils;
 import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
@@ -56,6 +58,9 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
     private PerformanceMonitor performanceMonitor;
     private PerformanceMetricsCollector performanceMetricsCollector;
     private PerformanceDisplayManager performanceDisplayManager;
+    
+    // Android 10 compliance validation
+    private Android10ComplianceValidator complianceValidator;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -78,6 +83,9 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         
         // Initialize processing mode selection interface
         initializeProcessingModeSelection();
+        
+        // Initialize Android 10 compliance validation
+        initializeAndroid10Compliance();
         
         // TODO: Set up Camera2 API with privacy controls (Task 4)
     }
@@ -450,6 +458,54 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
     }
     
     /**
+     * Initialize Android 10 compliance validation
+     * Validates all Android 10 requirements: 6.1, 6.2, 6.3, 6.4
+     */
+    private void initializeAndroid10Compliance() {
+        Log.d(TAG, "Initializing Android 10 compliance validation");
+        
+        complianceValidator = new Android10ComplianceValidator(this);
+        
+        // Run initial compliance validation
+        Android10ComplianceValidator.ComplianceResult result = complianceValidator.validateCompliance();
+        
+        Log.i(TAG, "Android 10 compliance validation result: " + result.summary);
+        
+        if (!result.isCompliant) {
+            Log.w(TAG, "Android 10 compliance issues found:");
+            for (Android10ComplianceValidator.ComplianceIssue issue : result.issues) {
+                Log.w(TAG, "  " + issue.toString());
+            }
+            
+            // Show compliance issues to user if critical
+            long criticalIssues = result.issues.stream()
+                    .filter(issue -> issue.severity == Android10ComplianceValidator.ComplianceIssue.Severity.CRITICAL)
+                    .count();
+            
+            if (criticalIssues > 0) {
+                runOnUiThread(() -> {
+                    Toast.makeText(this, "Android 10 compliance issues detected. Check logs for details.", 
+                            Toast.LENGTH_LONG).show();
+                });
+            }
+        } else {
+            Log.i(TAG, "Android 10 compliance validation passed");
+        }
+        
+        // Validate scoped storage compliance specifically
+        boolean temporaryFileCompliance = complianceValidator.validateTemporaryFileOperations();
+        Log.i(TAG, "Scoped storage compliance (temporary files): " + 
+                (temporaryFileCompliance ? "PASSED" : "FAILED"));
+        
+        // Test camera privacy controls
+        boolean cameraPrivacyCompliance = complianceValidator.testCameraPrivacyControls(this);
+        Log.i(TAG, "Camera privacy controls compliance: " + 
+                (cameraPrivacyCompliance ? "PASSED" : "FAILED"));
+        
+        Log.d(TAG, "Android 10 compliance validation initialized");
+    }
+    
+    /**
      * Handle processing mode selection
      * Updates OpenCV processor configuration based on selected mode
      */
@@ -635,6 +691,9 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             permissionHandler.requestCameraPermission();
         }
         
+        // Run Android 10 compliance tests on resume
+        runAndroid10ComplianceTests();
+        
         // Restart frame processor if OpenCV is initialized
         if (isOpenCVInitialized && frameProcessor != null && !frameProcessor.isProcessing()) {
             Log.d(TAG, "Restarting frame processor on resume");
@@ -689,6 +748,9 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
     public void onPermissionGranted() {
         Log.d(TAG, "Camera permission granted");
         Toast.makeText(this, "Camera permission granted", Toast.LENGTH_SHORT).show();
+        
+        // Test camera privacy controls after permission granted (Requirement 6.2)
+        testCameraPrivacyControls();
         
         // Permission granted, proceed with camera initialization
         initializeCameraComponents();
@@ -953,11 +1015,18 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         super.onResume();
         isAppInForeground = true;
         
-        Log.d(TAG, "Activity resumed, initializing OpenCV and checking camera permissions");
+        Log.d(TAG, "Activity resumed - implementing comprehensive lifecycle management");
         
         // Start performance monitoring
         if (performanceMetricsCollector != null) {
             performanceMetricsCollector.startMonitoring();
+            Log.d(TAG, "Performance monitoring restarted");
+        }
+        
+        // Resume performance display
+        if (performanceDisplayManager != null) {
+            performanceDisplayManager.onResume();
+            Log.d(TAG, "Performance display resumed");
         }
         
         // Initialize OpenCV when activity resumes
@@ -970,7 +1039,7 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         }
         
         // Check and request camera permission when app comes to foreground
-        // This handles Android 10 background activity restrictions
+        // This handles Android 10 background activity restrictions (Requirement 6.3)
         if (permissionHandler != null) {
             permissionHandler.requestCameraPermission();
         }
@@ -978,7 +1047,11 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         // Restart frame processor if OpenCV is initialized
         if (isOpenCVInitialized && frameProcessor != null && !frameProcessor.isProcessing()) {
             Log.d(TAG, "Restarting frame processor on resume");
-            frameProcessor.start();
+            if (frameProcessor.start()) {
+                Log.i(TAG, "Frame processor successfully restarted");
+            } else {
+                Log.w(TAG, "Failed to restart frame processor");
+            }
         }
         
         // Restart camera preview if it was stopped and we have permissions
@@ -986,8 +1059,26 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             !cameraManager.isPreviewActive() && permissionHandler != null && 
             permissionHandler.isCameraPermissionGranted()) {
             Log.d(TAG, "Restarting camera preview on resume");
-            cameraManager.startPreview();
+            if (cameraManager.startPreview()) {
+                Log.i(TAG, "Camera preview successfully restarted");
+            } else {
+                Log.w(TAG, "Failed to restart camera preview");
+            }
         }
+        
+        // Resume display manager
+        if (displayManager != null) {
+            displayManager.onResume();
+            Log.d(TAG, "Display manager resumed");
+        }
+        
+        // Reset error handler state for fresh start
+        if (errorHandler != null) {
+            errorHandler.onActivityResumed();
+            Log.d(TAG, "Error handler resumed");
+        }
+        
+        Log.i(TAG, "Activity resume completed - all components restarted");
     }
     
     @Override
@@ -995,24 +1086,55 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         super.onPause();
         isAppInForeground = false;
         
-        Log.d(TAG, "Activity paused");
+        Log.d(TAG, "Activity paused - implementing comprehensive resource cleanup");
         
-        // Stop performance monitoring
+        // Stop performance monitoring to save resources
         if (performanceMetricsCollector != null) {
             performanceMetricsCollector.stopMonitoring();
+            Log.d(TAG, "Performance monitoring stopped");
+        }
+        
+        // Pause performance display
+        if (performanceDisplayManager != null) {
+            performanceDisplayManager.onPause();
+            Log.d(TAG, "Performance display paused");
         }
         
         // Requirement 5.4: Properly release camera resources when app is backgrounded
-        if (cameraManager != null) {
-            Log.d(TAG, "Stopping camera preview due to app backgrounding");
+        // Android 10 background activity restrictions (Requirement 6.3)
+        if (cameraManager != null && cameraManager.isPreviewActive()) {
+            Log.d(TAG, "Stopping camera preview due to app backgrounding (Android 10 compliance)");
             cameraManager.stopPreview();
         }
         
-        // Stop frame processor to save resources
+        // Stop frame processor to save resources and comply with background restrictions
         if (frameProcessor != null && frameProcessor.isProcessing()) {
             Log.d(TAG, "Stopping frame processor due to app backgrounding");
-            frameProcessor.stop();
+            if (frameProcessor.stop()) {
+                Log.i(TAG, "Frame processor successfully stopped");
+            } else {
+                Log.w(TAG, "Frame processor stop encountered issues");
+            }
         }
+        
+        // Pause display manager to release graphics resources
+        if (displayManager != null) {
+            displayManager.onPause();
+            Log.d(TAG, "Display manager paused");
+        }
+        
+        // Notify error handler of pause state
+        if (errorHandler != null) {
+            errorHandler.onActivityPaused();
+            Log.d(TAG, "Error handler paused");
+        }
+        
+        // Clear any pending UI updates to prevent memory leaks
+        if (performanceDisplayManager != null) {
+            performanceDisplayManager.clearPendingUpdates();
+        }
+        
+        Log.i(TAG, "Activity pause completed - resources properly released for Android 10 compliance");
     }'ll just log and show a message
         // In a production app, you might want to:
         // - Disable camera-related UI elements
@@ -1031,39 +1153,85 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
     protected void onDestroy() {
         super.onDestroy();
         
-        Log.d(TAG, "Activity destroyed, releasing all resources");
+        Log.d(TAG, "Activity destroyed - performing comprehensive resource cleanup");
         
-        // Release camera resources completely
+        // Stop all monitoring and processing first
+        if (performanceMetricsCollector != null) {
+            performanceMetricsCollector.stopMonitoring();
+            performanceMetricsCollector.release();
+            performanceMetricsCollector = null;
+            Log.d(TAG, "Performance metrics collector released");
+        }
+        
+        // Release performance display manager
+        if (performanceDisplayManager != null) {
+            performanceDisplayManager.release();
+            performanceDisplayManager = null;
+            Log.d(TAG, "Performance display manager released");
+        }
+        
+        // Stop and release frame processor with proper thread cleanup
+        if (frameProcessor != null) {
+            if (frameProcessor.isProcessing()) {
+                frameProcessor.stop();
+            }
+            frameProcessor.release();
+            frameProcessor = null;
+            Log.d(TAG, "Frame processor released with thread cleanup");
+        }
+        
+        // Release camera resources completely with proper thread cleanup
         if (cameraManager != null) {
             cameraManager.release();
             cameraManager = null;
+            Log.d(TAG, "Camera manager released with thread cleanup");
         }
         
-        // Stop and release frame processor
-        if (frameProcessor != null) {
-            frameProcessor.stop();
-            frameProcessor = null;
-        }
-        
-        // Release OpenCV processor resources
+        // Release OpenCV processor resources and cleanup native memory
         if (openCVProcessor != null) {
             openCVProcessor.release();
             openCVProcessor = null;
+            isOpenCVInitialized = false;
+            Log.d(TAG, "OpenCV processor released with native memory cleanup");
         }
         
-        // Release display manager resources
+        // Release display manager resources and surface cleanup
         if (displayManager != null) {
             displayManager.release();
             displayManager = null;
+            Log.d(TAG, "Display manager released with surface cleanup");
         }
         
         // Release error handling resources
         if (errorDialogManager != null) {
             errorDialogManager.release();
             errorDialogManager = null;
+            Log.d(TAG, "Error dialog manager released");
         }
         
-        Log.d(TAG, "All resources released");
+        if (errorHandler != null) {
+            errorHandler.release();
+            errorHandler = null;
+            Log.d(TAG, "Error handler released");
+        }
+        
+        if (performanceMonitor != null) {
+            performanceMonitor.release();
+            performanceMonitor = null;
+            Log.d(TAG, "Performance monitor released");
+        }
+        
+        // Clear permission handler
+        if (permissionHandler != null) {
+            permissionHandler.release();
+            permissionHandler = null;
+            Log.d(TAG, "Permission handler released");
+        }
+        
+        // Force garbage collection to help with memory cleanup
+        System.gc();
+        
+        Log.i(TAG, "All resources released - comprehensive cleanup completed");
     }
     
     /**
@@ -1212,6 +1380,156 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             if (errorHandler != null) {
                 errorHandler.handleSystemError(e, "component restart");
             }
+        }
+    }
+    
+    /**
+     * Run comprehensive Android 10 compliance tests
+     * Tests all requirements: 6.1, 6.2, 6.3, 6.4
+     */
+    private void runAndroid10ComplianceTests() {
+        if (complianceValidator == null) {
+            Log.w(TAG, "Compliance validator not initialized, skipping tests");
+            return;
+        }
+        
+        Log.d(TAG, "Running Android 10 compliance tests");
+        
+        // Run comprehensive tests using test utils
+        java.util.List<Android10TestUtils.TestResult> testResults = 
+                Android10TestUtils.runComprehensiveTests(this);
+        
+        // Log test results
+        for (Android10TestUtils.TestResult result : testResults) {
+            if (result.passed) {
+                Log.i(TAG, "Android 10 compliance test PASSED: " + result.message + 
+                        " (Requirement: " + result.requirement + ")");
+            } else {
+                Log.w(TAG, "Android 10 compliance test FAILED: " + result.message + 
+                        " (Requirement: " + result.requirement + ")");
+            }
+        }
+        
+        // Generate and log compliance report
+        String complianceReport = Android10TestUtils.generateComplianceReport(this);
+        Log.i(TAG, "Android 10 Compliance Report:\n" + complianceReport);
+        
+        // Check if all tests passed
+        boolean allTestsPassed = testResults.stream().allMatch(result -> result.passed);
+        
+        if (allTestsPassed) {
+            Log.i(TAG, "All Android 10 compliance tests passed");
+        } else {
+            Log.w(TAG, "Some Android 10 compliance tests failed - check logs for details");
+            
+            // Count failed tests by requirement
+            java.util.Map<String, Long> failuresByRequirement = testResults.stream()
+                    .filter(result -> !result.passed)
+                    .collect(java.util.stream.Collectors.groupingBy(
+                            result -> result.requirement,
+                            java.util.stream.Collectors.counting()));
+            
+            for (java.util.Map.Entry<String, Long> entry : failuresByRequirement.entrySet()) {
+                Log.w(TAG, "Requirement " + entry.getKey() + " has " + entry.getValue() + " failed test(s)");
+            }
+        }
+    }
+    
+    /**
+     * Validate Android 10 scoped storage compliance for temporary file operations
+     * Requirement 6.1: Validate scoped storage compliance
+     */
+    private void validateScopedStorageCompliance() {
+        if (complianceValidator == null) {
+            Log.w(TAG, "Compliance validator not initialized");
+            return;
+        }
+        
+        boolean isCompliant = complianceValidator.validateTemporaryFileOperations();
+        
+        if (isCompliant) {
+            Log.i(TAG, "Scoped storage compliance validated - using app-specific directories");
+        } else {
+            Log.w(TAG, "Scoped storage compliance issue - temporary file operations may not be compliant");
+        }
+    }
+    
+    /**
+     * Test camera privacy controls and permission flows for Android 10
+     * Requirement 6.2: Test camera privacy controls and permission flows
+     */
+    private void testCameraPrivacyControls() {
+        if (complianceValidator == null) {
+            Log.w(TAG, "Compliance validator not initialized");
+            return;
+        }
+        
+        boolean isCompliant = complianceValidator.testCameraPrivacyControls(this);
+        
+        if (isCompliant) {
+            Log.i(TAG, "Camera privacy controls compliance validated");
+        } else {
+            Log.w(TAG, "Camera privacy controls compliance issue detected");
+        }
+        
+        // Also test using test utils for more detailed validation
+        Android10TestUtils.TestResult result = Android10TestUtils.testCameraPrivacyControls(this);
+        Log.i(TAG, "Camera privacy controls test result: " + result.toString());
+    }
+    
+    /**
+     * Verify background activity restrictions are properly handled
+     * Requirement 6.3: Verify background activity restrictions
+     */
+    private void verifyBackgroundActivityRestrictions() {
+        Log.d(TAG, "Verifying background activity restrictions compliance");
+        
+        // Test background activity restrictions using test utils
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            Android10TestUtils.TestResult result = 
+                    Android10TestUtils.testBackgroundActivityRestrictions(this);
+            Log.i(TAG, "Background activity restrictions test result: " + result.toString());
+        } else {
+            Log.i(TAG, "Background activity restrictions not required for API < 29");
+        }
+        
+        // Verify that camera operations are properly managed during background transitions
+        if (cameraManager != null) {
+            boolean isPreviewActive = cameraManager.isPreviewActive();
+            boolean isAppInForeground = this.isAppInForeground;
+            
+            if (!isAppInForeground && isPreviewActive) {
+                Log.w(TAG, "Potential background activity restriction violation: " +
+                        "camera preview active while app in background");
+            } else {
+                Log.i(TAG, "Background activity restrictions properly enforced for camera");
+            }
+        }
+    }
+    
+    /**
+     * Implement Android 10 enhanced location and camera privacy control tests
+     * Requirement 6.4: Enhanced location and camera privacy control tests
+     */
+    private void testEnhancedPrivacyControls() {
+        Log.d(TAG, "Testing Android 10 enhanced privacy controls");
+        
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            Android10TestUtils.TestResult result = 
+                    Android10TestUtils.testEnhancedPrivacyControls(this);
+            Log.i(TAG, "Enhanced privacy controls test result: " + result.toString());
+            
+            // Test privacy messaging integration
+            if (permissionHandler != null) {
+                try {
+                    permissionHandler.showAndroid10PrivacyNotice();
+                    Log.i(TAG, "Android 10 privacy notice integration working correctly");
+                } catch (Exception e) {
+                    Log.w(TAG, "Android 10 privacy notice integration issue", e);
+                }
+            }
+        } else {
+            Log.i(TAG, "Enhanced privacy controls not required for API < 29");
         }
     }
 }

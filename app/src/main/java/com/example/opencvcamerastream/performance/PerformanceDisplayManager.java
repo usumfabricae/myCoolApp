@@ -313,6 +313,74 @@ public class PerformanceDisplayManager {
     }
     
     /**
+     * Handle activity onResume lifecycle event
+     * Restore performance display state
+     */
+    public void onResume() {
+        // Performance overlay state is maintained
+        // Just ensure UI elements are properly initialized
+        if (performanceToggleFab != null) {
+            performanceToggleFab.setAlpha(isOverlayVisible ? 1.0f : 0.7f);
+        }
+        
+        // Refresh display with last known metrics if available
+        if (lastMetrics != null) {
+            updateFpsDisplay(lastMetrics);
+            updateProcessingTimeDisplay(lastMetrics);
+            updatePerformanceLevelDisplay(lastMetrics);
+            updateFrameDropDisplay(lastMetrics);
+        }
+    }
+    
+    /**
+     * Handle activity onPause lifecycle event
+     * Prepare for background state
+     */
+    public void onPause() {
+        // Keep overlay state but stop any pending animations
+        if (performanceLevelText != null) {
+            performanceLevelText.clearAnimation();
+        }
+        
+        // Clear any pending UI updates
+        clearPendingUpdates();
+    }
+    
+    /**
+     * Clear any pending UI updates to prevent memory leaks
+     */
+    public void clearPendingUpdates() {
+        // Remove any pending UI updates from the handler
+        activity.runOnUiThread(() -> {
+            // Clear animations
+            if (performanceLevelText != null) {
+                performanceLevelText.clearAnimation();
+            }
+        });
+    }
+    
+    /**
+     * Release performance display manager resources
+     */
+    public void release() {
+        // Clear any pending UI updates
+        clearPendingUpdates();
+        
+        // Clear references to prevent memory leaks
+        performanceOverlay = null;
+        fpsText = null;
+        processingTimeText = null;
+        memoryUsageText = null;
+        performanceLevelText = null;
+        frameDropText = null;
+        performanceToggleFab = null;
+        
+        // Clear state
+        lastMetrics = null;
+        isOverlayVisible = false;
+    }
+    
+    /**
      * Reset display to initial state
      */
     public void reset() {

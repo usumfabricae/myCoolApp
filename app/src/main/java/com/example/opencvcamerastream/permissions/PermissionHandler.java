@@ -216,4 +216,13 @@ public class PermissionHandler {
                     .show();
         }
     }
+    
+    /**
+     * Release permission handler resources
+     * Called during activity destruction
+     */
+    public void release() {
+        // Clear callback to prevent memory leaks
+        callback = null;
+    }
 }

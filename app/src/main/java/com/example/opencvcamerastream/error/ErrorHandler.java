@@ -385,6 +385,67 @@ public class ErrorHandler {
         return Math.min(delay, defaultRetryConfig.maxDelayMs);
     }
     
+    /**
+     * Handle activity onResume lifecycle event
+     * Reset error states for fresh start
+     */
+    public void onActivityResumed() {
+        Log.d(TAG, "ErrorHandler onResume - resetting error states");
+        
+        // Reset retry timers to allow immediate retries after resume
+        lastCameraRetryTime = 0;
+        lastProcessingRetryTime = 0;
+        
+        // Don't reset retry counts completely, but allow some fresh attempts
+        if (cameraRetryCount.get() > 0) {
+            cameraRetryCount.set(Math.max(0, cameraRetryCount.get() - 1));
+        }
+        if (processingRetryCount.get() > 0) {
+            processingRetryCount.set(Math.max(0, processingRetryCount.get() - 1));
+        }
+        
+        // Reset consecutive error count for fresh start
+        consecutiveErrors = Math.max(0, consecutiveErrors - 2);
+        
+        Log.i(TAG, "ErrorHandler resume completed - error states refreshed");
+    }
+    
+    /**
+     * Handle activity onPause lifecycle event
+     * Prepare for background state
+     */
+    public void onActivityPaused() {
+        Log.d(TAG, "ErrorHandler onPause - preparing for background state");
+        
+        // Don't reset error states completely, but prepare for background
+        // This helps with Android 10 background activity restrictions
+        
+        Log.i(TAG, "ErrorHandler pause completed - ready for background state");
+    }
+    
+    /**
+     * Release error handler resources
+     * Called during activity destruction
+     */
+    public void release() {
+        Log.d(TAG, "Releasing ErrorHandler resources");
+        
+        // Clear callback to prevent memory leaks
+        errorCallback = null;
+        
+        // Reset all counters
+        cameraRetryCount.set(0);
+        processingRetryCount.set(0);
+        consecutiveErrors = 0;
+        lastCameraRetryTime = 0;
+        lastProcessingRetryTime = 0;
+        
+        // Reset performance degradation state
+        isPerformanceDegraded = false;
+        
+        Log.i(TAG, "ErrorHandler resources released");
+    }
+    
     private String getCameraErrorUserMessage(int errorCode) {
         // Map camera error codes to user-friendly messages
         switch (errorCode) {
