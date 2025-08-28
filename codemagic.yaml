@@ -452,7 +452,29 @@ workflows:
           cd "$ANDROID_PROJECT_DIR"
           
           echo "=== COMPREHENSIVE UNIT TEST EXECUTION ==="
-          echo "Running unit tests with coverage reporting..."
+          
+          # First try to compile to get detailed error information
+          echo "Attempting compilation to identify specific errors..."
+          if ! $GRADLE_EXECUTABLE compileDebugJavaWithJavac --stacktrace --info; then
+            echo "❌ Compilation failed - checking for detailed error information"
+            
+            # Check if OpenCV stubs are properly created
+            echo "=== OPENCV STUB VERIFICATION ==="
+            if [ -d "opencv/src/main/java" ]; then
+              find opencv/src/main/java -name "*.java" -exec echo "Found: {}" \; -exec head -3 {} \;
+            else
+              echo "❌ OpenCV stub directory not found"
+            fi
+            
+            # Check main source files
+            echo "=== MAIN SOURCE FILES ==="
+            find app/src/main/java -name "*.java" | head -10
+            
+            echo "❌ Compilation failed - see errors above"
+            exit 1
+          fi
+          
+          echo "✅ Compilation successful, running unit tests with coverage reporting..."
           
           # Run tests with coverage
           if ! $GRADLE_EXECUTABLE testDebugUnitTest jacocoTestReport --stacktrace; then
@@ -718,6 +740,19 @@ workflows:
           
           echo "=== COMPREHENSIVE RELEASE TEST SUITE ==="
           
+          # Try to compile first to get detailed error information
+          echo "Attempting compilation to identify specific errors..."
+          if ! $GRADLE_EXECUTABLE compileDebugJavaWithJavac --stacktrace --info; then
+            echo "❌ Compilation failed - checking for detailed error information"
+            
+            # Check if OpenCV stubs are properly created
+            echo "=== OPENCV STUB VERIFICATION ==="
+            find opencv/src/main/java -name "*.java" -exec echo "Found: {}" \; -exec head -3 {} \;
+            
+            echo "❌ Compilation failed with errors above"
+            exit 1
+          fi
+          
           # Run unit tests with coverage
           echo "Running unit tests with coverage..."
           if ! $GRADLE_EXECUTABLE testDebugUnitTest jacocoTestReport --stacktrace; then
@@ -935,10 +970,8 @@ workflows:
               
               # Create a simple fallback wrapper
               echo "Creating fallback gradle wrapper..."
-              cat > gradlew_fallback << 'EOF'
-#!/bin/sh
-exec gradle "$@"
-EOF
+              echo '#!/bin/sh' > gradlew_fallback
+              echo 'exec gradle "$@"' >> gradlew_fallback
               chmod +x gradlew_fallback
               
               if ./gradlew_fallback --version >/dev/null 2>&1; then
@@ -987,75 +1020,68 @@ EOF
               mkdir -p opencv/src/main/java/org/opencv/imgproc
               
               # Create stub classes
-              cat > opencv/src/main/java/org/opencv/core/Mat.java << 'EOF'
-package org.opencv.core;
-public class Mat {
-    public Mat() {}
-    public Mat(int rows, int cols, int type) {}
-    public void release() {}
-    public boolean empty() { return false; }
-    public int rows() { return 0; }
-    public int cols() { return 0; }
-    public int type() { return 0; }
-}
-EOF
+              echo "Creating Mat stub class..."
+              echo 'package org.opencv.core;' > opencv/src/main/java/org/opencv/core/Mat.java
+              echo 'public class Mat {' >> opencv/src/main/java/org/opencv/core/Mat.java
+              echo '    public Mat() {}' >> opencv/src/main/java/org/opencv/core/Mat.java
+              echo '    public Mat(int rows, int cols, int type) {}' >> opencv/src/main/java/org/opencv/core/Mat.java
+              echo '    public void release() {}' >> opencv/src/main/java/org/opencv/core/Mat.java
+              echo '    public boolean empty() { return false; }' >> opencv/src/main/java/org/opencv/core/Mat.java
+              echo '    public int rows() { return 0; }' >> opencv/src/main/java/org/opencv/core/Mat.java
+              echo '    public int cols() { return 0; }' >> opencv/src/main/java/org/opencv/core/Mat.java
+              echo '    public int type() { return 0; }' >> opencv/src/main/java/org/opencv/core/Mat.java
+              echo '}' >> opencv/src/main/java/org/opencv/core/Mat.java
               
-              cat > opencv/src/main/java/org/opencv/core/CvType.java << 'EOF'
-package org.opencv.core;
-public class CvType {
-    public static final int CV_8UC3 = 16;
-    public static final int CV_8UC4 = 24;
-    public static final int CV_8UC1 = 0;
-}
-EOF
+              echo "Creating CvType stub class..."
+              echo 'package org.opencv.core;' > opencv/src/main/java/org/opencv/core/CvType.java
+              echo 'public class CvType {' >> opencv/src/main/java/org/opencv/core/CvType.java
+              echo '    public static final int CV_8UC3 = 16;' >> opencv/src/main/java/org/opencv/core/CvType.java
+              echo '    public static final int CV_8UC4 = 24;' >> opencv/src/main/java/org/opencv/core/CvType.java
+              echo '    public static final int CV_8UC1 = 0;' >> opencv/src/main/java/org/opencv/core/CvType.java
+              echo '}' >> opencv/src/main/java/org/opencv/core/CvType.java
               
-              cat > opencv/src/main/java/org/opencv/android/Utils.java << 'EOF'
-package org.opencv.android;
-import android.graphics.Bitmap;
-import org.opencv.core.Mat;
-public class Utils {
-    public static void matToBitmap(Mat mat, Bitmap bitmap) {}
-    public static void bitmapToMat(Bitmap bitmap, Mat mat) {}
-}
-EOF
+              echo "Creating Utils stub class..."
+              echo 'package org.opencv.android;' > opencv/src/main/java/org/opencv/android/Utils.java
+              echo 'import android.graphics.Bitmap;' >> opencv/src/main/java/org/opencv/android/Utils.java
+              echo 'import org.opencv.core.Mat;' >> opencv/src/main/java/org/opencv/android/Utils.java
+              echo 'public class Utils {' >> opencv/src/main/java/org/opencv/android/Utils.java
+              echo '    public static void matToBitmap(Mat mat, Bitmap bitmap) {}' >> opencv/src/main/java/org/opencv/android/Utils.java
+              echo '    public static void bitmapToMat(Bitmap bitmap, Mat mat) {}' >> opencv/src/main/java/org/opencv/android/Utils.java
+              echo '}' >> opencv/src/main/java/org/opencv/android/Utils.java
               
-              cat > opencv/src/main/java/org/opencv/android/BaseLoaderCallback.java << 'EOF'
-package org.opencv.android;
-import android.content.Context;
-public abstract class BaseLoaderCallback {
-    public BaseLoaderCallback(Context context) {}
-    public abstract void onManagerConnected(int status);
-}
-EOF
+              echo "Creating BaseLoaderCallback stub class..."
+              echo 'package org.opencv.android;' > opencv/src/main/java/org/opencv/android/BaseLoaderCallback.java
+              echo 'import android.content.Context;' >> opencv/src/main/java/org/opencv/android/BaseLoaderCallback.java
+              echo 'public abstract class BaseLoaderCallback {' >> opencv/src/main/java/org/opencv/android/BaseLoaderCallback.java
+              echo '    public BaseLoaderCallback(Context context) {}' >> opencv/src/main/java/org/opencv/android/BaseLoaderCallback.java
+              echo '    public abstract void onManagerConnected(int status);' >> opencv/src/main/java/org/opencv/android/BaseLoaderCallback.java
+              echo '}' >> opencv/src/main/java/org/opencv/android/BaseLoaderCallback.java
               
-              cat > opencv/src/main/java/org/opencv/android/LoaderCallbackInterface.java << 'EOF'
-package org.opencv.android;
-public interface LoaderCallbackInterface {
-    int SUCCESS = 0;
-    void onManagerConnected(int status);
-}
-EOF
+              echo "Creating LoaderCallbackInterface stub..."
+              echo 'package org.opencv.android;' > opencv/src/main/java/org/opencv/android/LoaderCallbackInterface.java
+              echo 'public interface LoaderCallbackInterface {' >> opencv/src/main/java/org/opencv/android/LoaderCallbackInterface.java
+              echo '    int SUCCESS = 0;' >> opencv/src/main/java/org/opencv/android/LoaderCallbackInterface.java
+              echo '    void onManagerConnected(int status);' >> opencv/src/main/java/org/opencv/android/LoaderCallbackInterface.java
+              echo '}' >> opencv/src/main/java/org/opencv/android/LoaderCallbackInterface.java
               
-              cat > opencv/src/main/java/org/opencv/android/OpenCVLoader.java << 'EOF'
-package org.opencv.android;
-import android.content.Context;
-public class OpenCVLoader {
-    public static boolean initDebug() { return true; }
-    public static void initAsync(String version, Context context, BaseLoaderCallback callback) {
-        callback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
-    }
-}
-EOF
+              echo "Creating OpenCVLoader stub class..."
+              echo 'package org.opencv.android;' > opencv/src/main/java/org/opencv/android/OpenCVLoader.java
+              echo 'import android.content.Context;' >> opencv/src/main/java/org/opencv/android/OpenCVLoader.java
+              echo 'public class OpenCVLoader {' >> opencv/src/main/java/org/opencv/android/OpenCVLoader.java
+              echo '    public static boolean initDebug() { return true; }' >> opencv/src/main/java/org/opencv/android/OpenCVLoader.java
+              echo '    public static void initAsync(String version, Context context, BaseLoaderCallback callback) {' >> opencv/src/main/java/org/opencv/android/OpenCVLoader.java
+              echo '        callback.onManagerConnected(LoaderCallbackInterface.SUCCESS);' >> opencv/src/main/java/org/opencv/android/OpenCVLoader.java
+              echo '    }' >> opencv/src/main/java/org/opencv/android/OpenCVLoader.java
+              echo '}' >> opencv/src/main/java/org/opencv/android/OpenCVLoader.java
               
-              cat > opencv/src/main/java/org/opencv/imgproc/Imgproc.java << 'EOF'
-package org.opencv.imgproc;
-import org.opencv.core.Mat;
-public class Imgproc {
-    public static final int COLOR_BGR2RGB = 4;
-    public static final int COLOR_RGBA2RGB = 3;
-    public static void cvtColor(Mat src, Mat dst, int code) {}
-}
-EOF
+              echo "Creating Imgproc stub class..."
+              echo 'package org.opencv.imgproc;' > opencv/src/main/java/org/opencv/imgproc/Imgproc.java
+              echo 'import org.opencv.core.Mat;' >> opencv/src/main/java/org/opencv/imgproc/Imgproc.java
+              echo 'public class Imgproc {' >> opencv/src/main/java/org/opencv/imgproc/Imgproc.java
+              echo '    public static final int COLOR_BGR2RGB = 4;' >> opencv/src/main/java/org/opencv/imgproc/Imgproc.java
+              echo '    public static final int COLOR_RGBA2RGB = 3;' >> opencv/src/main/java/org/opencv/imgproc/Imgproc.java
+              echo '    public static void cvtColor(Mat src, Mat dst, int code) {}' >> opencv/src/main/java/org/opencv/imgproc/Imgproc.java
+              echo '}' >> opencv/src/main/java/org/opencv/imgproc/Imgproc.java
               
               echo "✅ OpenCV stubs created for testing"
             else
