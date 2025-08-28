@@ -892,28 +892,66 @@ workflows:
           echo "ndk.dir=\$ANDROID_NDK_ROOT" >> "local.properties"
           echo "cmake.dir=\$ANDROID_CMAKE_ROOT" >> "local.properties"
           
-          # Set up Gradle executable with line ending fix
+          # Set up Gradle executable with comprehensive line ending fix
           if [ -f "gradlew" ]; then
-            # Fix line endings for Unix compatibility (convert Windows CRLF to Unix LF)
             echo "Fixing gradlew line endings for Unix compatibility..."
-            if command -v dos2unix >/dev/null 2>&1; then
-              dos2unix gradlew
+            
+            # Check current line endings
+            if file gradlew | grep -q "CRLF"; then
+              echo "Detected Windows line endings (CRLF) in gradlew"
             else
-              # Alternative method if dos2unix is not available
+              echo "Current gradlew file format: $(file gradlew)"
+            fi
+            
+            # Multiple methods to fix line endings
+            if command -v dos2unix >/dev/null 2>&1; then
+              echo "Using dos2unix to fix line endings..."
+              dos2unix gradlew
+            elif command -v tr >/dev/null 2>&1; then
+              echo "Using tr to fix line endings..."
+              tr -d '\r' < gradlew > gradlew.tmp && mv gradlew.tmp gradlew
+            else
+              echo "Using sed to fix line endings..."
               sed -i 's/\r$//' gradlew
             fi
             
+            # Additional cleanup - remove any remaining carriage returns
+            sed -i 's/\r//g' gradlew
+            
+            # Verify the shebang line is clean
+            head -1 gradlew | od -c
+            
             chmod +x gradlew
+            
+            # Test gradlew functionality
+            echo "Testing gradlew functionality..."
             if ./gradlew --version >/dev/null 2>&1; then
               GRADLE_EXECUTABLE="./gradlew"
               echo "✅ Using project gradlew wrapper (line endings fixed)"
             else
-              GRADLE_EXECUTABLE="gradle"
-              echo "⚠️  gradlew exists but not functional, using system gradle"
+              echo "❌ gradlew still not functional, creating fallback wrapper..."
+              echo "First line of gradlew:"
+              head -1 gradlew | cat -A
+              
+              # Create a simple fallback wrapper
+              echo "Creating fallback gradle wrapper..."
+              cat > gradlew_fallback << 'EOF'
+#!/bin/sh
+exec gradle "$@"
+EOF
+              chmod +x gradlew_fallback
+              
+              if ./gradlew_fallback --version >/dev/null 2>&1; then
+                GRADLE_EXECUTABLE="./gradlew_fallback"
+                echo "✅ Using fallback gradle wrapper"
+              else
+                GRADLE_EXECUTABLE="gradle"
+                echo "✅ Using system gradle"
+              fi
             fi
           else
             GRADLE_EXECUTABLE="gradle"
-            echo "✅ Using system gradle"
+            echo "✅ Using system gradle (no gradlew found)"
           fi
           
           echo "export GRADLE_EXECUTABLE='$GRADLE_EXECUTABLE'" >> $CM_BUILD_DIR/android_env.sh

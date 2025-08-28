@@ -1,4 +1,4 @@
-#!/usr/bin/env sh 
+#!/usr/bin/env sh
 
 #
 # Copyright 2015 the original author or authors.
@@ -58,9 +58,8 @@ die () {
     echo "$*"
     echo
     exit 1
-}
-
-# OS specific support (must be 'true' or 'false').
+}# O
+S specific support (must be 'true' or 'false').
 cygwin=false
 msys=false
 darwin=false
@@ -82,7 +81,6 @@ esac
 
 CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar
 
-
 # Determine the Java command to use to start the JVM.
 if [ -n "$JAVA_HOME" ] ; then
     if [ -x "$JAVA_HOME/jre/sh/java" ] ; then
@@ -103,9 +101,8 @@ else
 
 Please set the JAVA_HOME variable in your environment to match the
 location of your Java installation."
-fi
-
-# Increase the maximum file descriptors if we can.
+fi# Inc
+rease the maximum file descriptors if we can.
 if [ "$cygwin" = "false" -a "$darwin" = "false" -a "$nonstop" = "false" ] ; then
     MAX_FD_LIMIT=`ulimit -H -n`
     if [ $? -eq 0 ] ; then
@@ -144,8 +141,8 @@ if [ "$cygwin" = "true" -o "$msys" = "true" ] ; then
     # Add a user-defined pattern to the cygpath arguments
     if [ "$GRADLE_CYGPATTERN" != "" ] ; then
         OURCYGPATTERN="$OURCYGPATTERN|($GRADLE_CYGPATTERN)"
-    fi
-    # Now convert the arguments - kludge to limit ourselves to /bin/sh
+    fi   
+ # Now convert the arguments - kludge to limit ourselves to /bin/sh
     i=0
     for arg in "$@" ; do
         CHECK=`echo "$arg"|egrep -c "$OURCYGPATTERN" -`
