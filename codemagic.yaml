@@ -911,7 +911,9 @@ workflows:
           cd "$ANDROID_PROJECT_DIR"
           
           # Set up local.properties
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > "local.properties"
+          echo "sdk.dir=\$ANDROID_SDK_ROOT" > "local.properties"
+          echo "ndk.dir=\$ANDROID_NDK_ROOT" >> "local.properties"
+          echo "cmake.dir=\$ANDROID_CMAKE_ROOT" >> "local.properties"
           
           # Set up Gradle executable
           if [ -f "gradlew" ]; then
