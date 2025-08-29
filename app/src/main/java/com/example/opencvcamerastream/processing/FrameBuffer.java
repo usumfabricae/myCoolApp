@@ -255,8 +255,8 @@ public class FrameBuffer {
         }
         
         public double getRecycleRate() {
-            return totalAllocations.get() > 0 ? 
-                (double) totalRecycles.get() / totalAllocations.get() : 0.0;
+            return totalAllocations > 0 ? 
+                (double) totalRecycles / totalAllocations : 0.0;
         }
         
         @Override

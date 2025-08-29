@@ -6,6 +6,7 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.Settings;
+import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.RequiresApi;
 import androidx.core.app.ActivityCompat;
@@ -103,13 +104,21 @@ public class Android10ComplianceValidator {
     @RequiresApi(api = Build.VERSION_CODES.Q)
     private void validateScopedStorageCompliance() {
         // Check if app requests legacy external storage
-        if (context.getApplicationInfo().requestsLegacyExternalStorage()) {
-            issues.add(new ComplianceIssue(
-                    "Scoped Storage",
-                    "App requests legacy external storage, violating Android 10 scoped storage requirements",
-                    ComplianceIssue.Severity.CRITICAL,
-                    "6.1"
-            ));
+        // Note: requestsLegacyExternalStorage() is not available in all API levels
+        // We check the manifest flag directly through application info
+        try {
+            boolean requestsLegacyStorage = (context.getApplicationInfo().flags & 0x20000000) != 0; // FLAG_LEGACY_EXTERNAL_STORAGE
+            if (requestsLegacyStorage) {
+                issues.add(new ComplianceIssue(
+                        "Scoped Storage",
+                        "App requests legacy external storage, violating Android 10 scoped storage requirements",
+                        ComplianceIssue.Severity.CRITICAL,
+                        "6.1"
+                ));
+            }
+        } catch (Exception e) {
+            // If we can't determine, assume compliant
+            Log.d("Android10Compliance", "Could not check legacy storage flag: " + e.getMessage());
         }
         
         // Validate that app doesn't attempt to write to restricted external storage

@@ -914,10 +914,12 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             runOnUiThread(() -> {
                 if (errorDialogManager != null) {
                     ErrorHandler.ErrorInfo errorInfo = new ErrorHandler.ErrorInfo(
-                        ErrorHandler.ErrorCategory.PERMISSION,
+                        ErrorHandler.ErrorCategory.CAMERA_PERMISSION,
+                        ErrorHandler.ErrorSeverity.HIGH,
                         "Camera permission permanently denied",
                         "Please enable camera permission in Settings to use this app",
-                        null
+                        null,
+                        ErrorHandler.RecoveryStrategy.USER_INTERVENTION
                     );
                     errorDialogManager.showErrorDialog(errorInfo, null);
                 }
@@ -1036,7 +1038,7 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             if (frameProcessor.isProcessing()) {
                 frameProcessor.stop();
             }
-            frameProcessor.release();
+            frameProcessor.stop(); // Use stop() method instead of release()
             frameProcessor = null;
             Log.d(TAG, "Frame processor released with thread cleanup");
         }
