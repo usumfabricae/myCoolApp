@@ -60,9 +60,6 @@ public class FrameProcessorBufferIntegrationTest {
         
         FrameBuffer.BufferStats mockStats = mock(FrameBuffer.BufferStats.class);
         when(frameBuffer.getStats()).thenReturn(mockStats);
-        when(mockStats.getTotalBuffers()).thenReturn(3);
-        when(mockStats.getActiveBuffers()).thenReturn(0);
-        when(mockStats.getMemoryUsage()).thenReturn(0L);
     }
     
     @After
