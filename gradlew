@@ -100,8 +100,9 @@ else
 
 Please set the JAVA_HOME variable in your environment to match the
 location of your Java installation."
-fi# Inc
-rease the maximum file descriptors if we can.
+
+fi # Increase the maximum file descriptors if we can.
+
 if [ "$cygwin" = "false" -a "$darwin" = "false" -a "$nonstop" = "false" ] ; then
     MAX_FD_LIMIT=`ulimit -H -n`
     if [ $? -eq 0 ] ; then

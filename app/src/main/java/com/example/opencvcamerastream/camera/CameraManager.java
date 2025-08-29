@@ -522,8 +522,13 @@ public class CameraManager {
             return;
         }
         
-        if (!cameraOpenCloseLock.tryAcquire(2500, TimeUnit.MILLISECONDS)) {
-            throw new RuntimeException("Time out waiting to lock camera opening.");
+        try {
+            if (!cameraOpenCloseLock.tryAcquire(2500, TimeUnit.MILLISECONDS)) {
+                throw new RuntimeException("Time out waiting to lock camera opening.");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt(); // Restore interrupted status
+            throw new RuntimeException("Interrupted while waiting to lock camera opening.", e);
         }
         
         systemCameraManager.openCamera(cameraId, stateCallback, backgroundHandler);
