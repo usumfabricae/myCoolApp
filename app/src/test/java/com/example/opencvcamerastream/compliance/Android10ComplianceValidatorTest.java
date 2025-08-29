@@ -112,7 +112,8 @@ public class Android10ComplianceValidatorTest {
     @Test
     public void testScopedStorageCompliance_RequirementSixPointOne() {
         // Test compliant scoped storage configuration
-        when(mockApplicationInfo.requestsLegacyExternalStorage()).thenReturn(false);
+        // Mock the flags field to simulate no legacy storage request
+        mockApplicationInfo.flags = 0; // No FLAG_LEGACY_EXTERNAL_STORAGE
         
         Android10ComplianceValidator.ComplianceResult result = validator.validateCompliance();
         
@@ -131,7 +132,8 @@ public class Android10ComplianceValidatorTest {
     @Test
     public void testScopedStorageCompliance_LegacyStorageViolation() {
         // Test non-compliant configuration with legacy storage
-        when(mockApplicationInfo.requestsLegacyExternalStorage()).thenReturn(true);
+        // Mock the flags field to simulate legacy storage request
+        mockApplicationInfo.flags = 0x20000000; // FLAG_LEGACY_EXTERNAL_STORAGE
         setupCompliantConfiguration();
         
         Android10ComplianceValidator.ComplianceResult result = validator.validateCompliance();
@@ -326,7 +328,8 @@ public class Android10ComplianceValidatorTest {
     
     private void setupCompliantConfiguration() {
         // Set up a fully compliant Android 10 configuration
-        when(mockApplicationInfo.requestsLegacyExternalStorage()).thenReturn(false);
+        // Mock the flags field to simulate no legacy storage request
+        mockApplicationInfo.flags = 0; // No FLAG_LEGACY_EXTERNAL_STORAGE
         
         mockPackageInfo.requestedPermissions = new String[]{
                 android.Manifest.permission.CAMERA

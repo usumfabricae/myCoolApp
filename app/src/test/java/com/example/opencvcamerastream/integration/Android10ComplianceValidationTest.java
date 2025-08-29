@@ -280,7 +280,8 @@ public class Android10ComplianceValidationTest {
     
     private void setupCompliantConfiguration() {
         // Set up a fully compliant Android 10 configuration for testing
-        when(mockApplicationInfo.requestsLegacyExternalStorage()).thenReturn(false);
+        // Mock the flags field to simulate no legacy storage request
+        mockApplicationInfo.flags = 0; // No FLAG_LEGACY_EXTERNAL_STORAGE
         when(mockCacheDir.exists()).thenReturn(true);
         when(mockFilesDir.exists()).thenReturn(true);
         

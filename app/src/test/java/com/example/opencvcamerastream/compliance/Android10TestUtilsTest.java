@@ -84,7 +84,8 @@ public class Android10TestUtilsTest {
     
     @Test
     public void testScopedStorageCompliance_Passing() {
-        when(mockApplicationInfo.requestsLegacyExternalStorage()).thenReturn(false);
+        // Mock the flags field to simulate no legacy storage request
+        mockApplicationInfo.flags = 0; // No FLAG_LEGACY_EXTERNAL_STORAGE
         when(mockCacheDir.exists()).thenReturn(true);
         when(mockFilesDir.exists()).thenReturn(true);
         
@@ -97,7 +98,8 @@ public class Android10TestUtilsTest {
     
     @Test
     public void testScopedStorageCompliance_LegacyStorageFailure() {
-        when(mockApplicationInfo.requestsLegacyExternalStorage()).thenReturn(true);
+        // Mock the flags field to simulate legacy storage request
+        mockApplicationInfo.flags = 0x20000000; // FLAG_LEGACY_EXTERNAL_STORAGE
         when(mockCacheDir.exists()).thenReturn(true);
         when(mockFilesDir.exists()).thenReturn(true);
         
@@ -205,7 +207,8 @@ public class Android10TestUtilsTest {
     }
     
     private void setupPassingConfiguration() {
-        when(mockApplicationInfo.requestsLegacyExternalStorage()).thenReturn(false);
+        // Mock the flags field to simulate no legacy storage request
+        mockApplicationInfo.flags = 0; // No FLAG_LEGACY_EXTERNAL_STORAGE
         when(mockCacheDir.exists()).thenReturn(true);
         when(mockFilesDir.exists()).thenReturn(true);
         

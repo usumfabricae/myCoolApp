@@ -18,7 +18,7 @@ definitions:
 workflows:
   android-development-workflow:
     name: Android Development Build (Java 17 + AGP 8.1.2)
-    # Build trigger: Fixed test compilation errors - ApplicationProvider, CameraManager conflicts, PerformanceMetrics access
+    # Build trigger: Fixed remaining requestsLegacyExternalStorage() method calls in all test files
     max_build_duration: 120
     instance_type: mac_mini_m1
     environment:
