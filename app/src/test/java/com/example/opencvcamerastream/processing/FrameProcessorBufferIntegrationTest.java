@@ -109,10 +109,14 @@ public class FrameProcessorBufferIntegrationTest {
         FrameBuffer.PooledMat buffer = frameBuffer.acquireBuffer(480, 640, CvType.CV_8UC3);
         assertNotNull("Buffer should be acquired", buffer);
         
+        // Test getting buffer stats
+        FrameBuffer.BufferStats stats = frameProcessor.getBufferStats();
+        assertNotNull("Buffer stats should be available", stats);
+        
         // Verify mock interactions
         verify(frameProcessor).start();
         verify(frameBuffer).acquireBuffer(480, 640, CvType.CV_8UC3);
-        verify(frameProcessor, atLeastOnce()).getBufferStats();
+        verify(frameProcessor, atLeast(1)).getBufferStats();
     }
     
     @Test
@@ -165,7 +169,7 @@ public class FrameProcessorBufferIntegrationTest {
         // Test stats access
         FrameBuffer.BufferStats stats = frameProcessor.getBufferStats();
         assertNotNull("Stats should be accessible", stats);
-        verify(frameProcessor, atLeastOnce()).getBufferStats();
+        verify(frameProcessor, atLeast(1)).getBufferStats();
     }
     
     @Test
@@ -253,8 +257,8 @@ public class FrameProcessorBufferIntegrationTest {
         assertNotNull("Buffer should be acquired", buffer);
         
         // Verify mock interactions
-        verify(frameProcessor, atLeastOnce()).getProcessingStats();
-        verify(frameProcessor, atLeastOnce()).getBufferStats();
+        verify(frameProcessor, atLeast(1)).getProcessingStats();
+        verify(frameProcessor, atLeast(1)).getBufferStats();
         verify(frameBuffer).acquireBuffer(100, 100, CvType.CV_8UC1);
     }
 }
