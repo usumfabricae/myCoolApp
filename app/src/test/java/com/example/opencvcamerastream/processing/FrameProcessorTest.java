@@ -14,6 +14,7 @@ import static org.junit.Assert.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.Mockito.mockStatic;
+import org.mockito.MockedStatic;
 
 /**
  * Unit tests for FrameProcessor
@@ -129,7 +130,7 @@ public class FrameProcessorTest {
         // Requirement 2.1: Pass camera frame to OpenCV for processing
         
         // Mock static method for image to mat conversion
-        try (var mockedStatic = mockStatic(OpenCVProcessor.class)) {
+        try (MockedStatic<OpenCVProcessor> mockedStatic = mockStatic(OpenCVProcessor.class)) {
             mockedStatic.when(() -> OpenCVProcessor.imageToMat(mockImage))
                        .thenReturn(mockInputMat);
             
@@ -168,7 +169,7 @@ public class FrameProcessorTest {
     public void testProcessingErrorHandling() throws InterruptedException {
         // Test error handling during frame processing
         // Mock static method to throw exception
-        try (var mockedStatic = mockStatic(OpenCVProcessor.class)) {
+        try (MockedStatic<OpenCVProcessor> mockedStatic = mockStatic(OpenCVProcessor.class)) {
             mockedStatic.when(() -> OpenCVProcessor.imageToMat(mockImage))
                        .thenThrow(new RuntimeException("Conversion failed"));
             
@@ -189,7 +190,7 @@ public class FrameProcessorTest {
         // Test handling of empty Mat from image conversion
         when(mockInputMat.empty()).thenReturn(true);
         
-        try (var mockedStatic = mockStatic(OpenCVProcessor.class)) {
+        try (MockedStatic<OpenCVProcessor> mockedStatic = mockStatic(OpenCVProcessor.class)) {
             mockedStatic.when(() -> OpenCVProcessor.imageToMat(mockImage))
                        .thenReturn(mockInputMat);
             
@@ -270,7 +271,7 @@ public class FrameProcessorTest {
             return mockProcessedMat;
         });
         
-        try (var mockedStatic = mockStatic(OpenCVProcessor.class)) {
+        try (MockedStatic<OpenCVProcessor> mockedStatic = mockStatic(OpenCVProcessor.class)) {
             mockedStatic.when(() -> OpenCVProcessor.imageToMat(mockImage))
                        .thenReturn(mockInputMat);
             

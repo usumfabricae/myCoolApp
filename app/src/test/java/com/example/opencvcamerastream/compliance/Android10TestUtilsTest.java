@@ -81,8 +81,7 @@ public class Android10TestUtilsTest {
             // Won't happen in test
         }
     }
-}   
- 
+    
     @Test
     public void testScopedStorageCompliance_Passing() {
         when(mockApplicationInfo.requestsLegacyExternalStorage()).thenReturn(false);

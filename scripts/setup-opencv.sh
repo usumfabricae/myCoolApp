@@ -2,7 +2,7 @@
 
 # OpenCV Android SDK Setup Script
 # This script downloads and integrates the OpenCV Android SDK into the project
-# Updated: Fixed compilation errors with ErrorInfo constructor, frameProcessor methods, and InterruptedException handling
+# Updated: Fixed compilation errors with ErrorInfo constructor, frameProcessor methods, InterruptedException handling, and test var keyword issues
 
 set -e  # Exit on any error
 

@@ -27,6 +27,7 @@ import static org.junit.Assert.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.Mockito.mockStatic;
+import org.mockito.MockedStatic;
 
 /**
  * Integration tests for the complete camera-to-display pipeline
@@ -198,7 +199,7 @@ public class CameraToDisplayPipelineTest {
         // Test the complete pipeline from camera frame to display
         // Requirements: 2.1, 2.3, 3.3
         
-        try (var mockedStatic = mockStatic(OpenCVProcessor.class)) {
+        try (MockedStatic<OpenCVProcessor> mockedStatic = mockStatic(OpenCVProcessor.class)) {
             mockedStatic.when(() -> OpenCVProcessor.imageToMat(mockImage))
                        .thenReturn(mockInputMat);
             
@@ -261,7 +262,7 @@ public class CameraToDisplayPipelineTest {
             }
         });
         
-        try (var mockedStatic = mockStatic(OpenCVProcessor.class)) {
+        try (MockedStatic<OpenCVProcessor> mockedStatic = mockStatic(OpenCVProcessor.class)) {
             mockedStatic.when(() -> OpenCVProcessor.imageToMat(any(Image.class)))
                        .thenReturn(mockInputMat);
             
@@ -291,7 +292,7 @@ public class CameraToDisplayPipelineTest {
         // Test pipeline error recovery
         // Requirement 4.3: Fall back to displaying unprocessed frames
         
-        try (var mockedStatic = mockStatic(OpenCVProcessor.class)) {
+        try (MockedStatic<OpenCVProcessor> mockedStatic = mockStatic(OpenCVProcessor.class)) {
             // First call succeeds, second call fails
             mockedStatic.when(() -> OpenCVProcessor.imageToMat(any(Image.class)))
                        .thenReturn(mockInputMat)
@@ -371,7 +372,7 @@ public class CameraToDisplayPipelineTest {
             }
         });
         
-        try (var mockedStatic = mockStatic(OpenCVProcessor.class)) {
+        try (MockedStatic<OpenCVProcessor> mockedStatic = mockStatic(OpenCVProcessor.class)) {
             mockedStatic.when(() -> OpenCVProcessor.imageToMat(any(Image.class)))
                        .thenReturn(mockInputMat);
             
@@ -409,7 +410,7 @@ public class CameraToDisplayPipelineTest {
     public void testPipelineResourceCleanup() throws InterruptedException {
         // Test proper resource cleanup in the pipeline
         
-        try (var mockedStatic = mockStatic(OpenCVProcessor.class)) {
+        try (MockedStatic<OpenCVProcessor> mockedStatic = mockStatic(OpenCVProcessor.class)) {
             mockedStatic.when(() -> OpenCVProcessor.imageToMat(mockImage))
                        .thenReturn(mockInputMat);
             
@@ -442,7 +443,7 @@ public class CameraToDisplayPipelineTest {
         // Test pipeline behavior when display is not ready
         when(mockDisplayManager.isDisplayReady()).thenReturn(false);
         
-        try (var mockedStatic = mockStatic(OpenCVProcessor.class)) {
+        try (MockedStatic<OpenCVProcessor> mockedStatic = mockStatic(OpenCVProcessor.class)) {
             mockedStatic.when(() -> OpenCVProcessor.imageToMat(mockImage))
                        .thenReturn(mockInputMat);
             
@@ -474,7 +475,7 @@ public class CameraToDisplayPipelineTest {
             return mockProcessedMat;
         });
         
-        try (var mockedStatic = mockStatic(OpenCVProcessor.class)) {
+        try (MockedStatic<OpenCVProcessor> mockedStatic = mockStatic(OpenCVProcessor.class)) {
             mockedStatic.when(() -> OpenCVProcessor.imageToMat(mockImage))
                        .thenReturn(mockInputMat);
             
