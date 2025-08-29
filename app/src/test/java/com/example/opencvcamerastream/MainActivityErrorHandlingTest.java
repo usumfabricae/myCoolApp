@@ -3,6 +3,7 @@ package com.example.opencvcamerastream;
 import android.content.Context;
 import android.widget.Toast;
 import androidx.test.core.app.ApplicationProvider;
+import org.robolectric.RuntimeEnvironment;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -39,7 +40,7 @@ public class MainActivityErrorHandlingTest {
     @Before
     public void setUp() {
         MockitoAnnotations.openMocks(this);
-        context = ApplicationProvider.getApplicationContext();
+        context = RuntimeEnvironment.getApplication();
         
         activityController = Robolectric.buildActivity(MainActivity.class);
         activity = activityController.get();

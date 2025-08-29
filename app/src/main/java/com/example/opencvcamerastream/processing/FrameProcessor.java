@@ -488,7 +488,7 @@ public class FrameProcessor {
         public final long framesDropped;
         public final int currentQueueSize;
         
-        ProcessingStats(long received, long processed, long dropped, int queueSize) {
+        public ProcessingStats(long received, long processed, long dropped, int queueSize) {
             this.framesReceived = received;
             this.framesProcessed = processed;
             this.framesDropped = dropped;

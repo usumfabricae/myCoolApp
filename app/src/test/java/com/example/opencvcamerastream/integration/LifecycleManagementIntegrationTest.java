@@ -4,15 +4,14 @@ import android.content.Context;
 import android.content.pm.PackageManager;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCharacteristics;
-import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.util.Size;
 
 import androidx.core.app.ActivityCompat;
 import androidx.test.core.app.ApplicationProvider;
+import org.robolectric.RuntimeEnvironment;
 
 import com.example.opencvcamerastream.MainActivity;
-import com.example.opencvcamerastream.camera.CameraManager;
 import com.example.opencvcamerastream.display.DisplayManager;
 import com.example.opencvcamerastream.error.ErrorHandler;
 import com.example.opencvcamerastream.error.PerformanceMonitor;
@@ -60,7 +59,7 @@ public class LifecycleManagementIntegrationTest {
     private Context mockContext;
     
     @Mock
-    private CameraManager mockSystemCameraManager;
+    private android.hardware.camera2.CameraManager mockSystemCameraManager;
     
     @Mock
     private CameraCharacteristics mockCameraCharacteristics;

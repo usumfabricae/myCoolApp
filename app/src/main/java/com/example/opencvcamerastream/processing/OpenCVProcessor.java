@@ -85,7 +85,7 @@ public class OpenCVProcessor {
     private static final int MAX_CONSECUTIVE_ERRORS = 5;
     
     // Performance monitoring
-    private static class PerformanceMetrics {
+    public static class PerformanceMetrics {
         long totalFrames = 0;
         long totalProcessingTime = 0;
         long maxProcessingTime = 0;

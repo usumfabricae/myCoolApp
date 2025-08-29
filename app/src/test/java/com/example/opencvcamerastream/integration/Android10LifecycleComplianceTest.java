@@ -4,13 +4,10 @@ import android.content.Context;
 import android.content.pm.PackageManager;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCharacteristics;
-import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.util.Size;
 
 import androidx.core.app.ActivityCompat;
-
-import com.example.opencvcamerastream.camera.CameraManager;
 import com.example.opencvcamerastream.display.DisplayManager;
 import com.example.opencvcamerastream.error.ErrorHandler;
 import com.example.opencvcamerastream.error.PerformanceMonitor;

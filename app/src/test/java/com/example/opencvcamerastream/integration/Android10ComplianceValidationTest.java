@@ -41,7 +41,7 @@ import static org.mockito.Mockito.*;
  * to ensure consistent validation across all build environments.
  */
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = Build.VERSION_CODES.Q, application = MainActivity.class)
+@Config(sdk = Build.VERSION_CODES.Q)
 public class Android10ComplianceValidationTest {
     
     private MainActivity activity;

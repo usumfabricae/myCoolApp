@@ -4,6 +4,7 @@ import android.content.Context;
 import android.media.Image;
 import android.view.TextureView;
 import androidx.test.core.app.ApplicationProvider;
+import org.robolectric.RuntimeEnvironment;
 import com.example.opencvcamerastream.camera.CameraManager;
 import com.example.opencvcamerastream.display.DisplayManager;
 import com.example.opencvcamerastream.processing.FrameProcessor;
