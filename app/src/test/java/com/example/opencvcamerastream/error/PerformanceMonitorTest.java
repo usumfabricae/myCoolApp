@@ -50,7 +50,6 @@ public class PerformanceMonitorTest {
         normalMetrics.maxProcessingTimeMs = 30;
         normalMetrics.currentLevel = PerformanceMonitor.PerformanceLevel.HIGH;
         normalMetrics.frameDropCount = 0;
-        normalMetrics.totalFramesProcessed = 100;
         
         PerformanceMonitor.PerformanceMetrics warningMetrics = new PerformanceMonitor.PerformanceMetrics();
         warningMetrics.memoryUsagePercent = 75.0;
@@ -58,7 +57,6 @@ public class PerformanceMonitorTest {
         warningMetrics.maxProcessingTimeMs = 75;
         warningMetrics.currentLevel = PerformanceMonitor.PerformanceLevel.MEDIUM;
         warningMetrics.frameDropCount = 2;
-        warningMetrics.totalFramesProcessed = 100;
         
         PerformanceMonitor.PerformanceMetrics criticalMetrics = new PerformanceMonitor.PerformanceMetrics();
         criticalMetrics.memoryUsagePercent = 95.0;
@@ -66,7 +64,6 @@ public class PerformanceMonitorTest {
         criticalMetrics.maxProcessingTimeMs = 150;
         criticalMetrics.currentLevel = PerformanceMonitor.PerformanceLevel.CRITICAL;
         criticalMetrics.frameDropCount = 5;
-        criticalMetrics.totalFramesProcessed = 100;
         
         PerformanceMonitor.PerformanceMetrics frameDropMetrics = new PerformanceMonitor.PerformanceMetrics();
         frameDropMetrics.memoryUsagePercent = 50.0;
@@ -74,7 +71,6 @@ public class PerformanceMonitorTest {
         frameDropMetrics.maxProcessingTimeMs = 30;
         frameDropMetrics.currentLevel = PerformanceMonitor.PerformanceLevel.HIGH;
         frameDropMetrics.frameDropCount = 1;
-        frameDropMetrics.totalFramesProcessed = 100;
         
         when(performanceMonitor.getCurrentMetrics())
             .thenReturn(normalMetrics)
