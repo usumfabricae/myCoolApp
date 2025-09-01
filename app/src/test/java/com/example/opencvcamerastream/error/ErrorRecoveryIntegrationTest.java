@@ -68,6 +68,16 @@ public class ErrorRecoveryIntegrationTest {
         when(errorHandler.handleMemoryPressure(anyDouble()))
             .thenReturn(testErrorInfo);
         
+        // Set up PerformanceMonitor mock behaviors
+        when(performanceMonitor.getCurrentPerformanceLevel()).thenReturn(PerformanceMonitor.PerformanceLevel.HIGH);
+        
+        PerformanceMonitor.ProcessingRecommendation mockRecommendation = new PerformanceMonitor.ProcessingRecommendation();
+        mockRecommendation.enableAdvancedProcessing = true;
+        mockRecommendation.frameSkipRatio = 0.0;
+        when(performanceMonitor.getProcessingRecommendation()).thenReturn(mockRecommendation);
+        
+        doNothing().when(performanceMonitor).recordProcessingTime(anyLong());
+        
         // Set up DialogManager mock behaviors (these methods are void)
         doNothing().when(dialogManager).showErrorDialog(any(ErrorHandler.ErrorInfo.class), any());
         when(dialogManager.isDialogShowing()).thenReturn(true).thenReturn(false);

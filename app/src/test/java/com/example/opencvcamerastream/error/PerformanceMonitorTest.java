@@ -47,6 +47,18 @@ public class PerformanceMonitorTest {
         mockMetrics.averageProcessingTimeMs = 30;
         mockMetrics.maxProcessingTimeMs = 30;
         when(performanceMonitor.getCurrentMetrics()).thenReturn(mockMetrics);
+        
+        // Set up processing recommendation mock
+        PerformanceMonitor.ProcessingRecommendation mockRecommendation = new PerformanceMonitor.ProcessingRecommendation();
+        mockRecommendation.enableAdvancedProcessing = true;
+        mockRecommendation.frameSkipRatio = 0.0;
+        when(performanceMonitor.getProcessingRecommendation()).thenReturn(mockRecommendation);
+        
+        // Set up void methods
+        doNothing().when(performanceMonitor).recordProcessingTime(anyLong());
+        doNothing().when(performanceMonitor).recordFrameDrop(anyString());
+        doNothing().when(performanceMonitor).adjustPerformanceLevel(any(PerformanceMonitor.PerformanceLevel.class));
+        doNothing().when(performanceMonitor).resetPerformanceLevel();
 
     }
     
