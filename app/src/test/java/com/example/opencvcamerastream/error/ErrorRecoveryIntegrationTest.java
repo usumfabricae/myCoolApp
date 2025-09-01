@@ -38,6 +38,8 @@ public class ErrorRecoveryIntegrationTest {
     @Mock
     private ErrorDialogManager.DialogActionCallback mockDialogCallback;
     
+    private ErrorHandler.ErrorInfo mockErrorInfo;
+    
     @Before
     public void setUp() {
         MockitoAnnotations.openMocks(this);
@@ -62,20 +64,22 @@ public class ErrorRecoveryIntegrationTest {
         when(performanceMonitor.getProcessingRecommendation()).thenReturn(mockRecommendation);
         
         // Set up ErrorHandler mock behaviors (only methods that actually exist)
-        ErrorHandler.ErrorInfo mockErrorInfo = mock(ErrorHandler.ErrorInfo.class);
+        mockErrorInfo = mock(ErrorHandler.ErrorInfo.class);
         when(mockErrorInfo.category).thenReturn(ErrorHandler.ErrorCategory.CAMERA_HARDWARE);
         when(mockErrorInfo.recoveryStrategy).thenReturn(ErrorHandler.RecoveryStrategy.FALLBACK);
         when(mockErrorInfo.userMessage).thenReturn("Test error message");
         
-        // Set up ErrorHandler mock behaviors (these methods don't return values)
-        doNothing().when(errorHandler).handleError(any(Exception.class), any(ErrorHandler.ErrorCategory.class));
-        doNothing().when(errorHandler).handleCameraInitializationError(any(Exception.class));
-        doNothing().when(errorHandler).handleOpenCVError(any(Exception.class));
-        doNothing().when(errorHandler).handleMemoryError(any(OutOfMemoryError.class));
+        // Set up ErrorHandler mock behaviors (actual methods that return ErrorInfo)
+        when(errorHandler.handleCameraHardwareError(anyInt(), anyString(), any())).thenReturn(mockErrorInfo);
+        when(errorHandler.handleOpenCVProcessingError(any(Exception.class), anyBoolean())).thenReturn(mockErrorInfo);
+        when(errorHandler.handleMemoryPressure(anyLong(), anyLong())).thenReturn(mockErrorInfo);
+        when(errorHandler.handleDisplayError(any(Exception.class))).thenReturn(mockErrorInfo);
+        when(errorHandler.isPerformanceDegraded()).thenReturn(false);
+        when(errorHandler.getCameraRetryCount()).thenReturn(0);
+        doNothing().when(errorHandler).resetErrorCounters();
         
         // Set up DialogManager mock behaviors (these methods are void)
         doNothing().when(dialogManager).showErrorDialog(any(ErrorHandler.ErrorInfo.class), any());
-        doNothing().when(dialogManager).showErrorDialog(anyString(), anyString());
         when(dialogManager.isDialogShowing()).thenReturn(true).thenReturn(false);
         doNothing().when(dialogManager).dismissCurrentDialog();
     }
@@ -85,17 +89,21 @@ public class ErrorRecoveryIntegrationTest {
         // Test complete camera error and recovery flow
         
         // 1. Camera hardware error occurs
-        errorHandler.handleCameraInitializationError(new RuntimeException("Camera device error"));
+        ErrorHandler.ErrorInfo errorInfo = errorHandler.handleCameraHardwareError(
+                1, "Camera device error", new RuntimeException("Test error"));
+        
+        // Verify error was handled
+        assertNotNull("ErrorInfo should not be null", errorInfo);
         
         // 2. Show error dialog
-        dialogManager.showErrorDialog(mockErrorInfo, mockDialogCallback);
+        dialogManager.showErrorDialog(errorInfo, mockDialogCallback);
         
         boolean isShowing = dialogManager.isDialogShowing();
         assertTrue("Dialog state should be deterministic", isShowing == true || isShowing == false);
         
         // Verify mock interactions
-        verify(errorHandler).handleCameraInitializationError(any(RuntimeException.class));
-        verify(dialogManager).showErrorDialog(mockErrorInfo, mockDialogCallback);
+        verify(errorHandler).handleCameraHardwareError(1, "Camera device error", any(RuntimeException.class));
+        verify(dialogManager).showErrorDialog(errorInfo, mockDialogCallback);
     }
     
     @Test
@@ -104,14 +112,18 @@ public class ErrorRecoveryIntegrationTest {
         
         // 1. Processing error occurs
         Exception processingError = new RuntimeException("OpenCV processing failed");
-        errorHandler.handleOpenCVError(processingError);
+        ErrorHandler.ErrorInfo errorInfo = errorHandler.handleOpenCVProcessingError(
+                processingError, true);
+        
+        // Verify error was handled
+        assertNotNull("ErrorInfo should not be null", errorInfo);
         
         // 2. Show error dialog
-        dialogManager.showErrorDialog(mockErrorInfo, mockDialogCallback);
+        dialogManager.showErrorDialog(errorInfo, mockDialogCallback);
         
         // Verify mock interactions
-        verify(errorHandler).handleOpenCVError(processingError);
-        verify(dialogManager).showErrorDialog(mockErrorInfo, mockDialogCallback);
+        verify(errorHandler).handleOpenCVProcessingError(processingError, true);
+        verify(dialogManager).showErrorDialog(errorInfo, mockDialogCallback);
     }
     
     @Test
@@ -119,11 +131,15 @@ public class ErrorRecoveryIntegrationTest {
         // Test memory pressure leading to graceful degradation
         
         // 1. Memory pressure detected
-        OutOfMemoryError memoryError = new OutOfMemoryError("Memory pressure detected");
-        errorHandler.handleMemoryError(memoryError);
+        long currentMemory = 950 * 1024 * 1024; // 950MB
+        long maxMemory = 1024 * 1024 * 1024; // 1GB
+        
+        ErrorHandler.ErrorInfo errorInfo = errorHandler.handleMemoryPressure(
+                currentMemory, maxMemory);
         
         // Verify error handling
-        assertEquals(ErrorHandler.ErrorCategory.MEMORY, mockErrorInfo.category);
+        assertEquals(ErrorHandler.ErrorCategory.MEMORY_PRESSURE, errorInfo.category);
+        assertTrue(errorHandler.isPerformanceDegraded());
         
         // 2. Performance monitor should adjust recommendations
         PerformanceMonitor.ProcessingRecommendation recommendation = 
@@ -135,7 +151,7 @@ public class ErrorRecoveryIntegrationTest {
                   !recommendation.enableAdvancedProcessing);
         
         // 3. Show memory pressure dialog
-        dialogManager.showErrorDialog(mockErrorInfo, mockDialogCallback);
+        dialogManager.showErrorDialog(errorInfo, mockDialogCallback);
     }
     
     @Test
@@ -144,15 +160,24 @@ public class ErrorRecoveryIntegrationTest {
         
         // 1. Trigger performance degradation through multiple errors
         for (int i = 0; i < 6; i++) {
-            errorHandler.handleOpenCVError(new RuntimeException("Error " + i));
+            errorHandler.handleOpenCVProcessingError(
+                    new RuntimeException("Error " + i), true);
         }
+        
+        assertTrue(errorHandler.isPerformanceDegraded());
         
         // 2. Simulate performance improvement
         performanceMonitor.recordProcessingTime(20); // Good processing time
         performanceMonitor.recordProcessingTime(25);
         performanceMonitor.recordProcessingTime(30);
         
-        // 3. Performance level should improve
+        // 3. Reset error counters (simulating successful operations)
+        errorHandler.resetErrorCounters();
+        
+        // 4. Verify degradation is lifted
+        assertFalse(errorHandler.isPerformanceDegraded());
+        
+        // 5. Performance level should improve
         assertEquals(PerformanceMonitor.PerformanceLevel.HIGH, 
                     performanceMonitor.getCurrentPerformanceLevel());
     }
@@ -162,13 +187,19 @@ public class ErrorRecoveryIntegrationTest {
         // Test handling of cascading errors (multiple error types)
         
         // 1. Start with camera error
-        errorHandler.handleCameraInitializationError(new RuntimeException("Camera error"));
+        ErrorHandler.ErrorInfo cameraError = errorHandler.handleCameraHardwareError(
+                1, "Camera error", null);
         
         // 2. Follow with processing error
-        errorHandler.handleOpenCVError(new RuntimeException("Processing error"));
+        ErrorHandler.ErrorInfo processingError = errorHandler.handleOpenCVProcessingError(
+                new RuntimeException("Processing error"), true);
         
         // 3. Add memory pressure
-        errorHandler.handleMemoryError(new OutOfMemoryError("Memory pressure"));
+        ErrorHandler.ErrorInfo memoryError = errorHandler.handleMemoryPressure(
+                900 * 1024 * 1024, 1024 * 1024 * 1024);
+        
+        // 4. Verify system is in degraded state
+        assertTrue(errorHandler.isPerformanceDegraded());
         
         // 5. Performance monitor should recommend minimal processing
         PerformanceMonitor.ProcessingRecommendation recommendation = 
@@ -183,17 +214,21 @@ public class ErrorRecoveryIntegrationTest {
     public void testErrorDialogSequencing() {
         // Test proper sequencing of error dialogs
         
-        // 1. Handle first error and show dialog
-        errorHandler.handleCameraInitializationError(new RuntimeException("First error"));
+        // 1. Show first error dialog
+        ErrorHandler.ErrorInfo error1 = errorHandler.handleCameraHardwareError(
+                1, "First error", null);
+        assertNotNull("Error1 should not be null", error1);
         
-        dialogManager.showErrorDialog(mockErrorInfo, mockDialogCallback);
+        dialogManager.showErrorDialog(error1, mockDialogCallback);
         boolean isShowing1 = dialogManager.isDialogShowing();
         assertTrue("Dialog should be showing after first error", isShowing1);
         
-        // 2. Handle second error and show dialog (should dismiss first)
-        errorHandler.handleOpenCVError(new RuntimeException("Second error"));
+        // 2. Show second error dialog (should dismiss first)
+        ErrorHandler.ErrorInfo error2 = errorHandler.handleDisplayError(
+                new RuntimeException("Second error"));
+        assertNotNull("Error2 should not be null", error2);
         
-        dialogManager.showErrorDialog(mockErrorInfo, mockDialogCallback);
+        dialogManager.showErrorDialog(error2, mockDialogCallback);
         boolean isShowing2 = dialogManager.isDialogShowing();
         // The mock returns true then false, so this might be false now
         assertTrue("Dialog state should be deterministic", isShowing2 == true || isShowing2 == false);
@@ -202,8 +237,8 @@ public class ErrorRecoveryIntegrationTest {
         dialogManager.dismissCurrentDialog();
         
         // Verify mock interactions
-        verify(errorHandler).handleCameraInitializationError(any(RuntimeException.class));
-        verify(errorHandler).handleOpenCVError(any(RuntimeException.class));
+        verify(errorHandler).handleCameraHardwareError(1, "First error", null);
+        verify(errorHandler).handleDisplayError(any(RuntimeException.class));
         verify(dialogManager, times(2)).showErrorDialog(any(ErrorHandler.ErrorInfo.class), eq(mockDialogCallback));
         verify(dialogManager).dismissCurrentDialog();
     }
@@ -213,11 +248,16 @@ public class ErrorRecoveryIntegrationTest {
         // Test recovery progress tracking and notifications
         
         // 1. Trigger error that supports recovery
-        errorHandler.handleCameraInitializationError(new RuntimeException("Camera in use"));
+        ErrorHandler.ErrorInfo errorInfo = errorHandler.handleCameraHardwareError(
+                3, "Camera in use", null);
         
         // 2. Show error dialog
-        dialogManager.showErrorDialog(mockErrorInfo, mockDialogCallback);
+        dialogManager.showErrorDialog(errorInfo, mockDialogCallback);
         assertTrue(dialogManager.isDialogShowing());
+        
+        // 3. Verify error counters are reset after success
+        errorHandler.resetErrorCounters();
+        assertEquals(0, errorHandler.getCameraRetryCount());
     }
     
     @Test
@@ -225,10 +265,11 @@ public class ErrorRecoveryIntegrationTest {
         // Test handling of recovery failures
         
         // 1. Trigger error
-        errorHandler.handleCameraInitializationError(new RuntimeException("Camera device error"));
+        ErrorHandler.ErrorInfo errorInfo = errorHandler.handleCameraHardwareError(
+                1, "Camera device error", null);
         
         // 2. Show error dialog
-        dialogManager.showErrorDialog(mockErrorInfo, mockDialogCallback);
+        dialogManager.showErrorDialog(errorInfo, mockDialogCallback);
         assertTrue(dialogManager.isDialogShowing());
     }
     
@@ -265,11 +306,20 @@ public class ErrorRecoveryIntegrationTest {
         // Test proper resource cleanup
         
         // 1. Create error scenarios
-        errorHandler.handleCameraInitializationError(new RuntimeException("Test error"));
+        errorHandler.handleCameraHardwareError(1, "Test error", null);
         performanceMonitor.recordProcessingTime(100);
-        dialogManager.showErrorDialog(mockErrorInfo, mockDialogCallback);
+        dialogManager.showErrorDialog(
+                errorHandler.handleDisplayError(new RuntimeException("Test")), 
+                mockDialogCallback);
         
         // 2. Verify cleanup
         assertFalse(dialogManager.isDialogShowing());
+        
+        // 3. Reset counters
+        errorHandler.resetErrorCounters();
+        
+        // Verify reset state
+        assertEquals(0, errorHandler.getCameraRetryCount());
+        assertFalse(errorHandler.isPerformanceDegraded());
     }
 }
