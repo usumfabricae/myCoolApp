@@ -189,7 +189,7 @@ public class PerformanceMonitorTest {
         performanceMonitor.adjustPerformanceLevel(PerformanceMonitor.PerformanceLevel.HIGH);
         
         // Should not trigger callback since it's already HIGH
-        verify(mockCallback, never()).onPerformanceLevelChanged(any(), any());
+        verify(mockPerformanceCallback, never()).onPerformanceLevelChanged(any(), any());
     }
     
     @Test
