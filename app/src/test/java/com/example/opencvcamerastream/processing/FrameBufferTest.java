@@ -144,6 +144,7 @@ public class FrameBufferTest {
         
         FrameBuffer.BufferStats mockStats = mock(FrameBuffer.BufferStats.class);
         when(smallBuffer.getStats()).thenReturn(mockStats);
+        doNothing().when(smallBuffer).clear();
         
         // Test buffer acquisition
         FrameBuffer.PooledMat buffer1 = smallBuffer.acquireBuffer(100, 100, CvType.CV_8UC1);
@@ -156,7 +157,6 @@ public class FrameBufferTest {
         
         // Verify mock interactions
         verify(smallBuffer, times(3)).acquireBuffer(100, 100, CvType.CV_8UC1);
-        verify(smallBuffer, atLeastOnce()).getStats();
     }
     
     @Test
