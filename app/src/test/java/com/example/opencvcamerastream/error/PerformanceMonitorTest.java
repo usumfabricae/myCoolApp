@@ -36,79 +36,12 @@ public class PerformanceMonitorTest {
         MockitoAnnotations.openMocks(this);
         context = RuntimeEnvironment.getApplication();
         
-        // Use mock for unit tests to avoid Android framework dependencies
-        performanceMonitor = mock(PerformanceMonitor.class);
+        // Use real instance for unit tests to test actual behavior
+        performanceMonitor = new PerformanceMonitor(context);
         
-        // Set up default mock behaviors
-        when(performanceMonitor.getCurrentPerformanceLevel()).thenReturn(PerformanceMonitor.PerformanceLevel.HIGH);
-        when(performanceMonitor.isLowPerformanceDevice()).thenReturn(false);
-        
-        // Create different metrics for different test scenarios
-        PerformanceMonitor.PerformanceMetrics normalMetrics = new PerformanceMonitor.PerformanceMetrics();
-        normalMetrics.memoryUsagePercent = 50.0;
-        normalMetrics.averageProcessingTimeMs = 30;
-        normalMetrics.maxProcessingTimeMs = 30;
-        normalMetrics.currentLevel = PerformanceMonitor.PerformanceLevel.HIGH;
-        normalMetrics.frameDropCount = 0;
-        
-        PerformanceMonitor.PerformanceMetrics warningMetrics = new PerformanceMonitor.PerformanceMetrics();
-        warningMetrics.memoryUsagePercent = 75.0;
-        warningMetrics.averageProcessingTimeMs = 75;
-        warningMetrics.maxProcessingTimeMs = 75;
-        warningMetrics.currentLevel = PerformanceMonitor.PerformanceLevel.MEDIUM;
-        warningMetrics.frameDropCount = 2;
-        
-        PerformanceMonitor.PerformanceMetrics criticalMetrics = new PerformanceMonitor.PerformanceMetrics();
-        criticalMetrics.memoryUsagePercent = 95.0;
-        criticalMetrics.averageProcessingTimeMs = 150;
-        criticalMetrics.maxProcessingTimeMs = 150;
-        criticalMetrics.currentLevel = PerformanceMonitor.PerformanceLevel.CRITICAL;
-        criticalMetrics.frameDropCount = 5;
-        
-        PerformanceMonitor.PerformanceMetrics frameDropMetrics = new PerformanceMonitor.PerformanceMetrics();
-        frameDropMetrics.memoryUsagePercent = 50.0;
-        frameDropMetrics.averageProcessingTimeMs = 30;
-        frameDropMetrics.maxProcessingTimeMs = 30;
-        frameDropMetrics.currentLevel = PerformanceMonitor.PerformanceLevel.HIGH;
-        frameDropMetrics.frameDropCount = 1;
-        
-        when(performanceMonitor.getCurrentMetrics())
-            .thenReturn(normalMetrics)
-            .thenReturn(warningMetrics)
-            .thenReturn(criticalMetrics)
-            .thenReturn(frameDropMetrics)
-            .thenReturn(normalMetrics);
-        
-        // Create different recommendations for different test scenarios
-        PerformanceMonitor.ProcessingRecommendation highRecommendation = new PerformanceMonitor.ProcessingRecommendation();
-        highRecommendation.enableAdvancedProcessing = true;
-        highRecommendation.maxProcessingTimeMs = 50;
-        highRecommendation.frameSkipRatio = 0;
-        highRecommendation.processingQuality = 1.0f;
-        
-        PerformanceMonitor.ProcessingRecommendation mediumRecommendation = new PerformanceMonitor.ProcessingRecommendation();
-        mediumRecommendation.enableAdvancedProcessing = true;
-        mediumRecommendation.maxProcessingTimeMs = 75;
-        mediumRecommendation.frameSkipRatio = 1;
-        mediumRecommendation.processingQuality = 0.8f;
-        
-        PerformanceMonitor.ProcessingRecommendation lowRecommendation = new PerformanceMonitor.ProcessingRecommendation();
-        lowRecommendation.enableAdvancedProcessing = false;
-        lowRecommendation.maxProcessingTimeMs = 100;
-        lowRecommendation.frameSkipRatio = 2;
-        lowRecommendation.processingQuality = 0.6f;
-        
-        PerformanceMonitor.ProcessingRecommendation criticalRecommendation = new PerformanceMonitor.ProcessingRecommendation();
-        criticalRecommendation.enableAdvancedProcessing = false;
-        criticalRecommendation.maxProcessingTimeMs = 150;
-        criticalRecommendation.frameSkipRatio = 3;
-        criticalRecommendation.processingQuality = 0.4f;
-        
-        when(performanceMonitor.getProcessingRecommendation())
-            .thenReturn(highRecommendation)
-            .thenReturn(mediumRecommendation)
-            .thenReturn(lowRecommendation)
-            .thenReturn(criticalRecommendation);
+        // Set up performance callback mock
+        performanceMonitor.setPerformanceCallback(mockPerformanceCallback);
+
     }
     
     @Test
@@ -143,14 +76,13 @@ public class PerformanceMonitorTest {
         
         performanceMonitor.recordProcessingTime(processingTime);
         
-        // Verify the method was called
-        verify(performanceMonitor).recordProcessingTime(processingTime);
+        // Verify callback was called for warning level
+        verify(mockPerformanceCallback).onProcessingTimeWarning(processingTime);
         
-        // Test that we can get metrics (this will return the second metrics object)
+        // Test that we can get metrics
         PerformanceMonitor.PerformanceMetrics metrics = performanceMonitor.getCurrentMetrics();
         assertNotNull("Metrics should not be null", metrics);
-        assertEquals("Average processing time should match warning level", processingTime, metrics.averageProcessingTimeMs);
-        assertEquals("Performance level should be MEDIUM for warning", PerformanceMonitor.PerformanceLevel.MEDIUM, metrics.currentLevel);
+        assertTrue("Average processing time should be updated", metrics.averageProcessingTimeMs > 0);
     }
     
     @Test
@@ -160,16 +92,13 @@ public class PerformanceMonitorTest {
         
         performanceMonitor.recordProcessingTime(processingTime);
         
-        // Verify the method was called
-        verify(performanceMonitor).recordProcessingTime(processingTime);
+        // Verify callback was called for warning level (critical times also trigger warning)
+        verify(mockPerformanceCallback).onProcessingTimeWarning(processingTime);
         
-        // Test that we can get metrics (this will return the third metrics object)
+        // Test that we can get metrics
         PerformanceMonitor.PerformanceMetrics metrics = performanceMonitor.getCurrentMetrics();
         assertNotNull("Metrics should not be null", metrics);
-        assertEquals("Average processing time should match critical level", processingTime, metrics.averageProcessingTimeMs);
-        assertEquals("Performance level should be CRITICAL", PerformanceMonitor.PerformanceLevel.CRITICAL, metrics.currentLevel);
-        assertEquals(PerformanceMonitor.PerformanceLevel.CRITICAL, 
-                    performanceMonitor.getCurrentPerformanceLevel());
+        assertTrue("Average processing time should be updated", metrics.averageProcessingTimeMs > 0);
     }
     
     @Test

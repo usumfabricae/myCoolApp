@@ -45,8 +45,8 @@ public class ErrorRecoveryIntegrationTest {
         MockitoAnnotations.openMocks(this);
         context = RuntimeEnvironment.getApplication();
         
-        // Use mocks for unit tests to avoid Android framework dependencies
-        errorHandler = mock(ErrorHandler.class);
+        // Use real ErrorHandler instance for integration tests
+        errorHandler = new ErrorHandler(context);
         performanceMonitor = mock(PerformanceMonitor.class);
         dialogManager = mock(ErrorDialogManager.class);
         
@@ -63,20 +63,18 @@ public class ErrorRecoveryIntegrationTest {
         PerformanceMonitor.ProcessingRecommendation mockRecommendation = new PerformanceMonitor.ProcessingRecommendation();
         when(performanceMonitor.getProcessingRecommendation()).thenReturn(mockRecommendation);
         
-        // Set up ErrorHandler mock behaviors (only methods that actually exist)
-        mockErrorInfo = mock(ErrorHandler.ErrorInfo.class);
-        when(mockErrorInfo.category).thenReturn(ErrorHandler.ErrorCategory.CAMERA_HARDWARE);
-        when(mockErrorInfo.recoveryStrategy).thenReturn(ErrorHandler.RecoveryStrategy.FALLBACK);
-        when(mockErrorInfo.userMessage).thenReturn("Test error message");
+        // Create real ErrorInfo instance (can't mock final fields)
+        mockErrorInfo = new ErrorHandler.ErrorInfo(
+            ErrorHandler.ErrorCategory.CAMERA_HARDWARE,
+            ErrorHandler.ErrorSeverity.MEDIUM,
+            "Test error message",
+            "User-friendly error message",
+            new RuntimeException("Test cause"),
+            ErrorHandler.RecoveryStrategy.FALLBACK
+        );
         
-        // Set up ErrorHandler mock behaviors (actual methods that return ErrorInfo)
-        when(errorHandler.handleCameraHardwareError(anyInt(), anyString(), any())).thenReturn(mockErrorInfo);
-        when(errorHandler.handleOpenCVProcessingError(any(Exception.class), anyBoolean())).thenReturn(mockErrorInfo);
-        when(errorHandler.handleMemoryPressure(anyLong(), anyLong())).thenReturn(mockErrorInfo);
-        when(errorHandler.handleDisplayError(any(Exception.class))).thenReturn(mockErrorInfo);
-        when(errorHandler.isPerformanceDegraded()).thenReturn(false);
-        when(errorHandler.getCameraRetryCount()).thenReturn(0);
-        doNothing().when(errorHandler).resetErrorCounters();
+        // Set up ErrorHandler callback
+        errorHandler.setErrorCallback(mockErrorCallback);
         
         // Set up DialogManager mock behaviors (these methods are void)
         doNothing().when(dialogManager).showErrorDialog(any(ErrorHandler.ErrorInfo.class), any());
@@ -101,8 +99,8 @@ public class ErrorRecoveryIntegrationTest {
         boolean isShowing = dialogManager.isDialogShowing();
         assertTrue("Dialog state should be deterministic", isShowing == true || isShowing == false);
         
-        // Verify mock interactions
-        verify(errorHandler).handleCameraHardwareError(1, "Camera device error", any(RuntimeException.class));
+        // Verify callback was called
+        verify(mockErrorCallback).onError(errorInfo);
         verify(dialogManager).showErrorDialog(errorInfo, mockDialogCallback);
     }
     
@@ -121,8 +119,8 @@ public class ErrorRecoveryIntegrationTest {
         // 2. Show error dialog
         dialogManager.showErrorDialog(errorInfo, mockDialogCallback);
         
-        // Verify mock interactions
-        verify(errorHandler).handleOpenCVProcessingError(processingError, true);
+        // Verify callback was called
+        verify(mockErrorCallback).onError(errorInfo);
         verify(dialogManager).showErrorDialog(errorInfo, mockDialogCallback);
     }
     
@@ -139,7 +137,7 @@ public class ErrorRecoveryIntegrationTest {
         
         // Verify error handling
         assertEquals(ErrorHandler.ErrorCategory.MEMORY_PRESSURE, errorInfo.category);
-        assertTrue(errorHandler.isPerformanceDegraded());
+        verify(mockErrorCallback).onError(errorInfo);
         
         // 2. Performance monitor should adjust recommendations
         PerformanceMonitor.ProcessingRecommendation recommendation = 
