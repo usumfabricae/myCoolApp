@@ -51,7 +51,7 @@ public class PerformanceMonitorTest {
         // Set up processing recommendation mock
         PerformanceMonitor.ProcessingRecommendation mockRecommendation = new PerformanceMonitor.ProcessingRecommendation();
         mockRecommendation.enableAdvancedProcessing = true;
-        mockRecommendation.frameSkipRatio = 0.0;
+        mockRecommendation.frameSkipRatio = 0;
         when(performanceMonitor.getProcessingRecommendation()).thenReturn(mockRecommendation);
         
         // Set up void methods

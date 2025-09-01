@@ -65,7 +65,7 @@ public class ErrorRecoveryIntegrationTest {
             .thenReturn(testErrorInfo);
         when(errorHandler.handleDisplayError(any(RuntimeException.class)))
             .thenReturn(testErrorInfo);
-        when(errorHandler.handleMemoryPressure(anyDouble()))
+        when(errorHandler.handleMemoryPressure(anyLong(), anyLong()))
             .thenReturn(testErrorInfo);
         
         // Set up PerformanceMonitor mock behaviors
@@ -73,7 +73,7 @@ public class ErrorRecoveryIntegrationTest {
         
         PerformanceMonitor.ProcessingRecommendation mockRecommendation = new PerformanceMonitor.ProcessingRecommendation();
         mockRecommendation.enableAdvancedProcessing = true;
-        mockRecommendation.frameSkipRatio = 0.0;
+        mockRecommendation.frameSkipRatio = 0;
         when(performanceMonitor.getProcessingRecommendation()).thenReturn(mockRecommendation);
         
         doNothing().when(performanceMonitor).recordProcessingTime(anyLong());
