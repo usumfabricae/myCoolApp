@@ -29,7 +29,7 @@ public class PerformanceMonitorTest {
     private Context context;
     
     @Mock
-    private PerformanceMonitor.PerformanceCallback mockCallback;
+    private PerformanceMonitor.PerformanceCallback mockPerformanceCallback;
     
     @Before
     public void setUp() {
