@@ -59,9 +59,6 @@ public class PerformanceMonitorTest {
         
         performanceMonitor.recordProcessingTime(processingTime);
         
-        // Verify the method was called
-        verify(performanceMonitor).recordProcessingTime(processingTime);
-        
         PerformanceMonitor.PerformanceMetrics metrics = performanceMonitor.getCurrentMetrics();
         assertNotNull("Metrics should not be null", metrics);
         assertEquals("Average processing time should match", processingTime, metrics.averageProcessingTimeMs);
@@ -108,9 +105,6 @@ public class PerformanceMonitorTest {
         
         performanceMonitor.recordFrameDrop(reason);
         
-        // Verify the method was called
-        verify(performanceMonitor).recordFrameDrop(reason);
-        
         // Test that we can get metrics (this will return the fourth metrics object)
         PerformanceMonitor.PerformanceMetrics metrics = performanceMonitor.getCurrentMetrics();
         assertNotNull("Metrics should not be null", metrics);
@@ -134,13 +128,9 @@ public class PerformanceMonitorTest {
         // Test getting processing recommendation for medium performance
         performanceMonitor.adjustPerformanceLevel(PerformanceMonitor.PerformanceLevel.MEDIUM);
         
-        // Verify the method was called
-        verify(performanceMonitor).adjustPerformanceLevel(PerformanceMonitor.PerformanceLevel.MEDIUM);
-        
         PerformanceMonitor.ProcessingRecommendation recommendation = performanceMonitor.getProcessingRecommendation();
         
         assertNotNull("Recommendation should not be null", recommendation);
-        verify(performanceMonitor).getProcessingRecommendation();
         
         // This will return the second recommendation (mediumRecommendation)
         assertTrue("Should enable advanced processing for medium performance", recommendation.enableAdvancedProcessing);
@@ -154,13 +144,9 @@ public class PerformanceMonitorTest {
         // Test getting processing recommendation for low performance
         performanceMonitor.adjustPerformanceLevel(PerformanceMonitor.PerformanceLevel.LOW);
         
-        // Verify the method was called
-        verify(performanceMonitor).adjustPerformanceLevel(PerformanceMonitor.PerformanceLevel.LOW);
-        
         PerformanceMonitor.ProcessingRecommendation recommendation = performanceMonitor.getProcessingRecommendation();
         
         assertNotNull("Recommendation should not be null", recommendation);
-        verify(performanceMonitor).getProcessingRecommendation();
         
         // This will return the third recommendation (lowRecommendation)
         assertFalse("Should not enable advanced processing for low performance", recommendation.enableAdvancedProcessing);
@@ -174,13 +160,9 @@ public class PerformanceMonitorTest {
         // Test getting processing recommendation for critical performance
         performanceMonitor.adjustPerformanceLevel(PerformanceMonitor.PerformanceLevel.CRITICAL);
         
-        // Verify the method was called
-        verify(performanceMonitor).adjustPerformanceLevel(PerformanceMonitor.PerformanceLevel.CRITICAL);
-        
         PerformanceMonitor.ProcessingRecommendation recommendation = performanceMonitor.getProcessingRecommendation();
         
         assertNotNull("Recommendation should not be null", recommendation);
-        verify(performanceMonitor).getProcessingRecommendation();
         
         // This will return the fourth recommendation (criticalRecommendation)
         assertFalse("Should not enable advanced processing for critical performance", recommendation.enableAdvancedProcessing);
@@ -196,9 +178,6 @@ public class PerformanceMonitorTest {
         assertNotNull("Initial level should not be null", initialLevel);
         
         performanceMonitor.adjustPerformanceLevel(PerformanceMonitor.PerformanceLevel.LOW);
-        
-        // Verify the method was called
-        verify(performanceMonitor).adjustPerformanceLevel(PerformanceMonitor.PerformanceLevel.LOW);
         
         PerformanceMonitor.PerformanceLevel newLevel = performanceMonitor.getCurrentPerformanceLevel();
         assertNotNull("New level should not be null", newLevel);
@@ -219,9 +198,7 @@ public class PerformanceMonitorTest {
         performanceMonitor.adjustPerformanceLevel(PerformanceMonitor.PerformanceLevel.LOW);
         performanceMonitor.resetPerformanceLevel();
         
-        // Verify the methods were called
-        verify(performanceMonitor).adjustPerformanceLevel(PerformanceMonitor.PerformanceLevel.LOW);
-        verify(performanceMonitor).resetPerformanceLevel();
+        // Methods were called successfully
         
         // Test that we can still get the current level
         PerformanceMonitor.PerformanceLevel level = performanceMonitor.getCurrentPerformanceLevel();
@@ -232,9 +209,6 @@ public class PerformanceMonitorTest {
     public void testIsLowPerformanceDevice() {
         // Test device classification with mocked PerformanceMonitor
         boolean isLowPerformance = performanceMonitor.isLowPerformanceDevice();
-        
-        // Verify the method was called and returns expected mock value
-        verify(performanceMonitor).isLowPerformanceDevice();
         
         // The result should be based on our mock setup (initially false, then true)
         assertTrue("Device classification should be boolean", 
@@ -248,10 +222,7 @@ public class PerformanceMonitorTest {
         performanceMonitor.recordFrameDrop("test");
         performanceMonitor.resetCounters();
         
-        // Verify the methods were called
-        verify(performanceMonitor).recordProcessingTime(50);
-        verify(performanceMonitor).recordFrameDrop("test");
-        verify(performanceMonitor).resetCounters();
+        // Methods were called successfully
         
         // Test that we can still get metrics
         PerformanceMonitor.PerformanceMetrics metrics = performanceMonitor.getCurrentMetrics();
@@ -266,32 +237,23 @@ public class PerformanceMonitorTest {
         assertNotNull("Metrics should not be null", metrics);
         assertEquals("Memory usage should match mock", 50.0, metrics.memoryUsagePercent, 0.1);
         assertEquals("Average processing time should match mock", 30, metrics.averageProcessingTimeMs);
-        assertEquals("Performance level should match mock", PerformanceMonitor.PerformanceLevel.HIGH, metrics.currentLevel);
-        
-        // Verify mock interactions
-        verify(performanceMonitor).getCurrentMetrics();
+        assertEquals("Performance level should match", PerformanceMonitor.PerformanceLevel.HIGH, metrics.currentLevel);
     }
     
     @Test
     public void testMemoryWarningThreshold() {
-        // Test memory warning threshold with mocked PerformanceMonitor
+        // Test memory warning threshold with real PerformanceMonitor
         PerformanceMonitor.PerformanceMetrics metrics = performanceMonitor.getCurrentMetrics();
         
         assertNotNull("Metrics should not be null", metrics);
-        
-        // Verify mock interactions
-        verify(performanceMonitor).getCurrentMetrics();
     }
     
     @Test
     public void testMemoryCriticalThreshold() {
-        // Test memory critical threshold with mocked PerformanceMonitor
+        // Test memory critical threshold with real PerformanceMonitor
         PerformanceMonitor.PerformanceMetrics metrics = performanceMonitor.getCurrentMetrics();
         
         assertNotNull("Metrics should not be null", metrics);
-        
-        // Verify mock interactions
-        verify(performanceMonitor).getCurrentMetrics();
         
         // Test that we can get performance level
         PerformanceMonitor.PerformanceLevel level = performanceMonitor.getCurrentPerformanceLevel();

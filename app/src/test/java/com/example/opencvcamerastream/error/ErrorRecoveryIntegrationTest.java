@@ -38,43 +38,21 @@ public class ErrorRecoveryIntegrationTest {
     @Mock
     private ErrorDialogManager.DialogActionCallback mockDialogCallback;
     
-    private ErrorHandler.ErrorInfo mockErrorInfo;
+
     
     @Before
     public void setUp() {
         MockitoAnnotations.openMocks(this);
         context = RuntimeEnvironment.getApplication();
         
-        // Use real ErrorHandler instance for integration tests
+        // Use real instances for integration tests
         errorHandler = new ErrorHandler(context);
-        performanceMonitor = mock(PerformanceMonitor.class);
+        performanceMonitor = new PerformanceMonitor(context);
         dialogManager = mock(ErrorDialogManager.class);
         
-        // Set up default mock behaviors
-        when(performanceMonitor.getCurrentPerformanceLevel()).thenReturn(PerformanceMonitor.PerformanceLevel.HIGH);
-        when(performanceMonitor.isLowPerformanceDevice()).thenReturn(false);
-        
-        PerformanceMonitor.PerformanceMetrics mockMetrics = new PerformanceMonitor.PerformanceMetrics();
-        mockMetrics.memoryUsagePercent = 50.0;
-        mockMetrics.averageProcessingTimeMs = 30;
-        mockMetrics.currentLevel = PerformanceMonitor.PerformanceLevel.HIGH;
-        when(performanceMonitor.getCurrentMetrics()).thenReturn(mockMetrics);
-        
-        PerformanceMonitor.ProcessingRecommendation mockRecommendation = new PerformanceMonitor.ProcessingRecommendation();
-        when(performanceMonitor.getProcessingRecommendation()).thenReturn(mockRecommendation);
-        
-        // Create real ErrorInfo instance (can't mock final fields)
-        mockErrorInfo = new ErrorHandler.ErrorInfo(
-            ErrorHandler.ErrorCategory.CAMERA_HARDWARE,
-            ErrorHandler.ErrorSeverity.MEDIUM,
-            "Test error message",
-            "User-friendly error message",
-            new RuntimeException("Test cause"),
-            ErrorHandler.RecoveryStrategy.FALLBACK
-        );
-        
-        // Set up ErrorHandler callback
+        // Set up callbacks for real instances
         errorHandler.setErrorCallback(mockErrorCallback);
+        performanceMonitor.setPerformanceCallback(mockPerformanceCallback);
         
         // Set up DialogManager mock behaviors (these methods are void)
         doNothing().when(dialogManager).showErrorDialog(any(ErrorHandler.ErrorInfo.class), any());
@@ -234,9 +212,7 @@ public class ErrorRecoveryIntegrationTest {
         // 3. Dismiss current dialog
         dialogManager.dismissCurrentDialog();
         
-        // Verify mock interactions
-        verify(errorHandler).handleCameraHardwareError(1, "First error", null);
-        verify(errorHandler).handleDisplayError(any(RuntimeException.class));
+        // Verify dialog interactions
         verify(dialogManager, times(2)).showErrorDialog(any(ErrorHandler.ErrorInfo.class), eq(mockDialogCallback));
         verify(dialogManager).dismissCurrentDialog();
     }
