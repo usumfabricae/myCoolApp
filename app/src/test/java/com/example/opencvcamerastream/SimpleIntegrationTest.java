@@ -61,7 +61,7 @@ public class SimpleIntegrationTest {
         ErrorDialogManager dialogManager = new ErrorDialogManager(context);
         assertNotNull("ErrorDialogManager should be created", dialogManager);
         
-        // Test basic functionality
+        // Test basic functionality (dialog showing will fail in test environment, but that's expected)
         assertFalse("Dialog should not be showing initially", dialogManager.isDialogShowing());
         
         // Clean up

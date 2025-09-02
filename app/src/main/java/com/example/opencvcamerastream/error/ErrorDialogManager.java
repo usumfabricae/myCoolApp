@@ -35,31 +35,45 @@ public class ErrorDialogManager {
     public interface DialogActionCallback {
         /**
          * Called when user chooses to retry the failed operation
-         * @param errorInfo The original error information
          */
-        void onRetry(@NonNull ErrorHandler.ErrorInfo errorInfo);
+        void onRetryRequested();
         
         /**
          * Called when user chooses to dismiss the error
-         * @param errorInfo The original error information
          */
-        void onDismiss(@NonNull ErrorHandler.ErrorInfo errorInfo);
+        void onDismissed();
         
         /**
          * Called when user chooses to open settings (for permission errors)
-         * @param errorInfo The original error information
          */
-        void onOpenSettings(@NonNull ErrorHandler.ErrorInfo errorInfo);
+        void onSettingsRequested();
         
         /**
          * Called when user chooses to use fallback functionality
-         * @param errorInfo The original error information
          */
-        void onUseFallback(@NonNull ErrorHandler.ErrorInfo errorInfo);
+        void onFallbackAccepted();
+        
+        // New methods for compatibility
+        default void onRetry(@NonNull ErrorHandler.ErrorInfo errorInfo) {
+            onRetryRequested();
+        }
+        
+        default void onDismiss(@NonNull ErrorHandler.ErrorInfo errorInfo) {
+            onDismissed();
+        }
+        
+        default void onOpenSettings(@NonNull ErrorHandler.ErrorInfo errorInfo) {
+            onSettingsRequested();
+        }
+        
+        default void onUseFallback(@NonNull ErrorHandler.ErrorInfo errorInfo) {
+            onFallbackAccepted();
+        }
     }
     
     public ErrorDialogManager(@NonNull Context context) {
-        this.context = context.getApplicationContext();
+        // Keep the original context for dialogs (needs Activity context)
+        this.context = context;
     }
     
     /**
@@ -122,6 +136,79 @@ public class ErrorDialogManager {
     }
     
     /**
+     * Show a recovery dialog during error recovery attempts
+     * @param message Recovery message to display
+     * @param attemptNumber Current attempt number
+     */
+    public void showRecoveryDialog(@NonNull String message, int attemptNumber) {
+        dismissCurrentDialog();
+        
+        AlertDialog.Builder builder = new AlertDialog.Builder(context);
+        builder.setTitle("Recovering...");
+        builder.setMessage(message + " (Attempt " + attemptNumber + ")");
+        builder.setCancelable(false);
+        
+        try {
+            currentDialog = builder.create();
+            currentDialog.show();
+            Log.d(TAG, "Recovery dialog shown: " + message);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to show recovery dialog", e);
+        }
+    }
+    
+    /**
+     * Show a recovery success dialog
+     * @param message Success message to display
+     * @param totalAttempts Total number of attempts made
+     */
+    public void showRecoverySuccessDialog(@NonNull String message, int totalAttempts) {
+        dismissCurrentDialog();
+        
+        AlertDialog.Builder builder = new AlertDialog.Builder(context);
+        builder.setTitle("Recovery Successful");
+        builder.setMessage(message + " (Recovered after " + totalAttempts + " attempts)");
+        builder.setPositiveButton("OK", (dialog, which) -> dismissCurrentDialog());
+        
+        try {
+            currentDialog = builder.create();
+            currentDialog.show();
+            Log.d(TAG, "Recovery success dialog shown: " + message);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to show recovery success dialog", e);
+        }
+    }
+    
+    /**
+     * Show a recovery failure dialog
+     * @param message Failure message to display
+     * @param totalAttempts Total number of attempts made
+     * @param callback Optional callback for user actions
+     */
+    public void showRecoveryFailureDialog(@NonNull String message, int totalAttempts, 
+                                        @Nullable DialogActionCallback callback) {
+        dismissCurrentDialog();
+        
+        AlertDialog.Builder builder = new AlertDialog.Builder(context);
+        builder.setTitle("Recovery Failed");
+        builder.setMessage(message + " (Failed after " + totalAttempts + " attempts)");
+        builder.setPositiveButton("OK", (dialog, which) -> {
+            if (callback != null) {
+                callback.onDismissed();
+            }
+            dismissCurrentDialog();
+        });
+        
+        try {
+            currentDialog = builder.create();
+            currentDialog.show();
+            Log.d(TAG, "Recovery failure dialog shown: " + message);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to show recovery failure dialog", e);
+        }
+    }
+    
+    /**
      * Release resources and dismiss any showing dialogs
      */
     public void release() {
@@ -156,13 +243,13 @@ public class ErrorDialogManager {
             case RETRY_WITH_BACKOFF:
                 builder.setPositiveButton("Retry", (dialog, which) -> {
                     if (currentCallback != null) {
-                        currentCallback.onRetry(errorInfo);
+                        currentCallback.onRetryRequested();
                     }
                     dismissCurrentDialog();
                 });
                 builder.setNegativeButton("Cancel", (dialog, which) -> {
                     if (currentCallback != null) {
-                        currentCallback.onDismiss(errorInfo);
+                        currentCallback.onDismissed();
                     }
                     dismissCurrentDialog();
                 });
@@ -171,19 +258,19 @@ public class ErrorDialogManager {
             case FALLBACK:
                 builder.setPositiveButton("Use Basic Mode", (dialog, which) -> {
                     if (currentCallback != null) {
-                        currentCallback.onUseFallback(errorInfo);
+                        currentCallback.onFallbackAccepted();
                     }
                     dismissCurrentDialog();
                 });
                 builder.setNegativeButton("Retry", (dialog, which) -> {
                     if (currentCallback != null) {
-                        currentCallback.onRetry(errorInfo);
+                        currentCallback.onRetryRequested();
                     }
                     dismissCurrentDialog();
                 });
                 builder.setNeutralButton("Cancel", (dialog, which) -> {
                     if (currentCallback != null) {
-                        currentCallback.onDismiss(errorInfo);
+                        currentCallback.onDismissed();
                     }
                     dismissCurrentDialog();
                 });
@@ -193,14 +280,14 @@ public class ErrorDialogManager {
                 if (errorInfo.category == ErrorHandler.ErrorCategory.CAMERA_PERMISSION) {
                     builder.setPositiveButton("Open Settings", (dialog, which) -> {
                         if (currentCallback != null) {
-                            currentCallback.onOpenSettings(errorInfo);
+                            currentCallback.onSettingsRequested();
                         }
                         dismissCurrentDialog();
                     });
                 }
                 builder.setNegativeButton("Cancel", (dialog, which) -> {
                     if (currentCallback != null) {
-                        currentCallback.onDismiss(errorInfo);
+                        currentCallback.onDismissed();
                     }
                     dismissCurrentDialog();
                 });
@@ -209,7 +296,7 @@ public class ErrorDialogManager {
             case GRACEFUL_DEGRADATION:
                 builder.setPositiveButton("OK", (dialog, which) -> {
                     if (currentCallback != null) {
-                        currentCallback.onDismiss(errorInfo);
+                        currentCallback.onDismissed();
                     }
                     dismissCurrentDialog();
                 });
@@ -219,7 +306,7 @@ public class ErrorDialogManager {
             default:
                 builder.setPositiveButton("OK", (dialog, which) -> {
                     if (currentCallback != null) {
-                        currentCallback.onDismiss(errorInfo);
+                        currentCallback.onDismissed();
                     }
                     dismissCurrentDialog();
                 });
