@@ -2,28 +2,24 @@ package com.example.opencvcamerastream.error;
 
 import android.app.AlertDialog;
 import android.content.Context;
-import android.content.Intent;
-import android.net.Uri;
-import android.provider.Settings;
+import android.content.DialogInterface;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import com.example.opencvcamerastream.R;
 
 /**
- * Manages user-friendly error dialogs and recovery actions
+ * Manages error dialogs and user interactions for error recovery
  * 
  * This class provides:
- * - User-friendly error message dialogs
- * - Appropriate action buttons for different error types
- * - Navigation to system settings when needed
- * - Retry mechanisms with user confirmation
+ * - Error dialog display and management
+ * - User action callbacks for error recovery
+ * - Dialog sequencing and dismissal
+ * - User-friendly error message presentation
  * 
  * Requirements addressed:
  * - 4.1: Display informative error messages and request permissions again
- * - 4.2: User-friendly error messages for camera failures
- * - 4.3: Error message display for OpenCV processing failures
- * - 4.4: User notification for performance degradation
+ * - 4.2: Provide user interface for error recovery actions
+ * - 4.3: Show fallback options when processing fails
  */
 public class ErrorDialogManager {
     
@@ -31,397 +27,203 @@ public class ErrorDialogManager {
     
     private final Context context;
     private AlertDialog currentDialog;
+    private DialogActionCallback currentCallback;
     
-    // Dialog action callbacks
+    /**
+     * Callback interface for dialog actions
+     */
     public interface DialogActionCallback {
-        void onRetryRequested();
-        void onSettingsRequested();
-        void onDismissed();
-        void onFallbackAccepted();
+        /**
+         * Called when user chooses to retry the failed operation
+         * @param errorInfo The original error information
+         */
+        void onRetry(@NonNull ErrorHandler.ErrorInfo errorInfo);
+        
+        /**
+         * Called when user chooses to dismiss the error
+         * @param errorInfo The original error information
+         */
+        void onDismiss(@NonNull ErrorHandler.ErrorInfo errorInfo);
+        
+        /**
+         * Called when user chooses to open settings (for permission errors)
+         * @param errorInfo The original error information
+         */
+        void onOpenSettings(@NonNull ErrorHandler.ErrorInfo errorInfo);
+        
+        /**
+         * Called when user chooses to use fallback functionality
+         * @param errorInfo The original error information
+         */
+        void onUseFallback(@NonNull ErrorHandler.ErrorInfo errorInfo);
     }
     
     public ErrorDialogManager(@NonNull Context context) {
-        this.context = context;
+        this.context = context.getApplicationContext();
     }
     
     /**
-     * Show error dialog based on error information
+     * Show an error dialog for the given error information
+     * @param errorInfo The error to display
+     * @param callback Callback for user actions
      */
     public void showErrorDialog(@NonNull ErrorHandler.ErrorInfo errorInfo, 
                                @Nullable DialogActionCallback callback) {
+        // Dismiss any existing dialog first
         dismissCurrentDialog();
         
-        switch (errorInfo.category) {
-            case CAMERA_PERMISSION:
-                showCameraPermissionDialog(errorInfo, callback);
-                break;
-            case CAMERA_HARDWARE:
-                showCameraHardwareDialog(errorInfo, callback);
-                break;
-            case OPENCV_PROCESSING:
-                showProcessingErrorDialog(errorInfo, callback);
-                break;
-            case MEMORY_PRESSURE:
-                showMemoryPressureDialog(errorInfo, callback);
-                break;
-            case DISPLAY_ERROR:
-                showDisplayErrorDialog(errorInfo, callback);
-                break;
-            case SYSTEM_ERROR:
-                showSystemErrorDialog(errorInfo, callback);
-                break;
-            default:
-                showGenericErrorDialog(errorInfo, callback);
-                break;
-        }
-    }
-    
-    /**
-     * Show camera permission error dialog
-     * Requirement 4.1: Display informative error messages and request permissions again
-     */
-    private void showCameraPermissionDialog(@NonNull ErrorHandler.ErrorInfo errorInfo,
-                                          @Nullable DialogActionCallback callback) {
+        this.currentCallback = callback;
+        
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
-        builder.setTitle("Camera Permission Required");
+        builder.setTitle(getDialogTitle(errorInfo));
         builder.setMessage(errorInfo.userMessage);
         builder.setCancelable(false);
         
-        if (errorInfo.recoveryStrategy == ErrorHandler.RecoveryStrategy.USER_INTERVENTION) {
-            // Permission permanently denied - guide to settings
-            builder.setPositiveButton("Open Settings", (dialog, which) -> {
-                if (callback != null) {
-                    callback.onSettingsRequested();
-                }
-                openAppSettings();
-                dialog.dismiss();
-            });
-            
-            builder.setNegativeButton("Cancel", (dialog, which) -> {
-                if (callback != null) {
-                    callback.onDismissed();
-                }
-                dialog.dismiss();
-            });
-        } else {
-            // Permission can be requested again
-            builder.setPositiveButton("Grant Permission", (dialog, which) -> {
-                if (callback != null) {
-                    callback.onRetryRequested();
-                }
-                dialog.dismiss();
-            });
-            
-            builder.setNegativeButton("Cancel", (dialog, which) -> {
-                if (callback != null) {
-                    callback.onDismissed();
-                }
-                dialog.dismiss();
-            });
-        }
+        // Add appropriate buttons based on error type and recovery strategy
+        setupDialogButtons(builder, errorInfo);
         
-        currentDialog = builder.create();
-        currentDialog.show();
-        
-        Log.d(TAG, "Camera permission dialog shown");
-    }
-    
-    /**
-     * Show camera hardware error dialog
-     * Requirement 4.2: User-friendly error messages for camera failures
-     */
-    private void showCameraHardwareDialog(@NonNull ErrorHandler.ErrorInfo errorInfo,
-                                        @Nullable DialogActionCallback callback) {
-        AlertDialog.Builder builder = new AlertDialog.Builder(context);
-        builder.setTitle("Camera Error");
-        builder.setMessage(errorInfo.userMessage);
-        builder.setCancelable(true);
-        
-        if (errorInfo.recoveryStrategy == ErrorHandler.RecoveryStrategy.RETRY_WITH_BACKOFF) {
-            builder.setPositiveButton("Retry", (dialog, which) -> {
-                if (callback != null) {
-                    callback.onRetryRequested();
-                }
-                dialog.dismiss();
-            });
-        }
-        
-        builder.setNegativeButton("OK", (dialog, which) -> {
-            if (callback != null) {
-                callback.onDismissed();
-            }
-            dialog.dismiss();
-        });
-        
-        currentDialog = builder.create();
-        currentDialog.show();
-        
-        Log.d(TAG, "Camera hardware error dialog shown");
-    }
-    
-    /**
-     * Show OpenCV processing error dialog
-     * Requirement 4.3: Error message display for OpenCV processing failures
-     */
-    private void showProcessingErrorDialog(@NonNull ErrorHandler.ErrorInfo errorInfo,
-                                         @Nullable DialogActionCallback callback) {
-        AlertDialog.Builder builder = new AlertDialog.Builder(context);
-        builder.setTitle("Processing Error");
-        builder.setMessage(errorInfo.userMessage);
-        builder.setCancelable(true);
-        
-        if (errorInfo.recoveryStrategy == ErrorHandler.RecoveryStrategy.FALLBACK) {
-            builder.setPositiveButton("Continue", (dialog, which) -> {
-                if (callback != null) {
-                    callback.onFallbackAccepted();
-                }
-                dialog.dismiss();
-            });
-        } else {
-            builder.setPositiveButton("Retry", (dialog, which) -> {
-                if (callback != null) {
-                    callback.onRetryRequested();
-                }
-                dialog.dismiss();
-            });
-        }
-        
-        builder.setNegativeButton("OK", (dialog, which) -> {
-            if (callback != null) {
-                callback.onDismissed();
-            }
-            dialog.dismiss();
-        });
-        
-        currentDialog = builder.create();
-        currentDialog.show();
-        
-        Log.d(TAG, "Processing error dialog shown");
-    }
-    
-    /**
-     * Show memory pressure dialog
-     * Requirement 4.4: User notification for performance degradation
-     */
-    private void showMemoryPressureDialog(@NonNull ErrorHandler.ErrorInfo errorInfo,
-                                        @Nullable DialogActionCallback callback) {
-        AlertDialog.Builder builder = new AlertDialog.Builder(context);
-        builder.setTitle("Performance Optimization");
-        builder.setMessage(errorInfo.userMessage + "\n\nThe app will reduce processing quality to maintain smooth operation.");
-        builder.setCancelable(true);
-        
-        builder.setPositiveButton("OK", (dialog, which) -> {
-            if (callback != null) {
-                callback.onFallbackAccepted();
-            }
-            dialog.dismiss();
-        });
-        
-        currentDialog = builder.create();
-        currentDialog.show();
-        
-        Log.d(TAG, "Memory pressure dialog shown");
-    }
-    
-    /**
-     * Show display error dialog
-     */
-    private void showDisplayErrorDialog(@NonNull ErrorHandler.ErrorInfo errorInfo,
-                                      @Nullable DialogActionCallback callback) {
-        AlertDialog.Builder builder = new AlertDialog.Builder(context);
-        builder.setTitle("Display Error");
-        builder.setMessage(errorInfo.userMessage);
-        builder.setCancelable(true);
-        
-        builder.setPositiveButton("Retry", (dialog, which) -> {
-            if (callback != null) {
-                callback.onRetryRequested();
-            }
-            dialog.dismiss();
-        });
-        
-        builder.setNegativeButton("OK", (dialog, which) -> {
-            if (callback != null) {
-                callback.onDismissed();
-            }
-            dialog.dismiss();
-        });
-        
-        currentDialog = builder.create();
-        currentDialog.show();
-        
-        Log.d(TAG, "Display error dialog shown");
-    }
-    
-    /**
-     * Show system error dialog
-     */
-    private void showSystemErrorDialog(@NonNull ErrorHandler.ErrorInfo errorInfo,
-                                     @Nullable DialogActionCallback callback) {
-        AlertDialog.Builder builder = new AlertDialog.Builder(context);
-        builder.setTitle("System Error");
-        builder.setMessage(errorInfo.userMessage);
-        builder.setCancelable(true);
-        
-        builder.setPositiveButton("Retry", (dialog, which) -> {
-            if (callback != null) {
-                callback.onRetryRequested();
-            }
-            dialog.dismiss();
-        });
-        
-        builder.setNegativeButton("OK", (dialog, which) -> {
-            if (callback != null) {
-                callback.onDismissed();
-            }
-            dialog.dismiss();
-        });
-        
-        currentDialog = builder.create();
-        currentDialog.show();
-        
-        Log.d(TAG, "System error dialog shown");
-    }
-    
-    /**
-     * Show generic error dialog
-     */
-    private void showGenericErrorDialog(@NonNull ErrorHandler.ErrorInfo errorInfo,
-                                      @Nullable DialogActionCallback callback) {
-        AlertDialog.Builder builder = new AlertDialog.Builder(context);
-        builder.setTitle("Error");
-        builder.setMessage(errorInfo.userMessage);
-        builder.setCancelable(true);
-        
-        builder.setPositiveButton("OK", (dialog, which) -> {
-            if (callback != null) {
-                callback.onDismissed();
-            }
-            dialog.dismiss();
-        });
-        
-        currentDialog = builder.create();
-        currentDialog.show();
-        
-        Log.d(TAG, "Generic error dialog shown");
-    }
-    
-    /**
-     * Show recovery progress dialog
-     */
-    public void showRecoveryDialog(@NonNull String message, int attemptNumber) {
-        dismissCurrentDialog();
-        
-        AlertDialog.Builder builder = new AlertDialog.Builder(context);
-        builder.setTitle("Recovering...");
-        builder.setMessage(message + "\n\nAttempt " + attemptNumber);
-        builder.setCancelable(false);
-        
-        currentDialog = builder.create();
-        currentDialog.show();
-        
-        Log.d(TAG, "Recovery dialog shown for attempt " + attemptNumber);
-    }
-    
-    /**
-     * Show recovery success dialog
-     */
-    public void showRecoverySuccessDialog(@NonNull String message, int totalAttempts) {
-        dismissCurrentDialog();
-        
-        AlertDialog.Builder builder = new AlertDialog.Builder(context);
-        builder.setTitle("Recovery Successful");
-        builder.setMessage(message + "\n\nRecovered after " + totalAttempts + " attempt(s).");
-        builder.setCancelable(true);
-        
-        builder.setPositiveButton("OK", (dialog, which) -> dialog.dismiss());
-        
-        currentDialog = builder.create();
-        currentDialog.show();
-        
-        // Auto-dismiss after 3 seconds
-        new android.os.Handler().postDelayed(() -> {
-            if (currentDialog != null && currentDialog.isShowing()) {
-                currentDialog.dismiss();
-            }
-        }, 3000);
-        
-        Log.d(TAG, "Recovery success dialog shown");
-    }
-    
-    /**
-     * Show recovery failure dialog
-     */
-    public void showRecoveryFailureDialog(@NonNull String message, int totalAttempts,
-                                        @Nullable DialogActionCallback callback) {
-        dismissCurrentDialog();
-        
-        AlertDialog.Builder builder = new AlertDialog.Builder(context);
-        builder.setTitle("Recovery Failed");
-        builder.setMessage(message + "\n\nFailed after " + totalAttempts + " attempt(s).");
-        builder.setCancelable(true);
-        
-        builder.setPositiveButton("OK", (dialog, which) -> {
-            if (callback != null) {
-                callback.onDismissed();
-            }
-            dialog.dismiss();
-        });
-        
-        currentDialog = builder.create();
-        currentDialog.show();
-        
-        Log.d(TAG, "Recovery failure dialog shown");
-    }
-    
-    /**
-     * Dismiss current dialog if showing
-     */
-    public void dismissCurrentDialog() {
-        if (currentDialog != null && currentDialog.isShowing()) {
-            currentDialog.dismiss();
-            currentDialog = null;
-        }
-    }
-    
-    /**
-     * Open app settings for permission management
-     */
-    private void openAppSettings() {
         try {
-            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-            Uri uri = Uri.fromParts("package", context.getPackageName(), null);
-            intent.setData(uri);
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            context.startActivity(intent);
+            currentDialog = builder.create();
+            currentDialog.show();
             
-            Log.d(TAG, "Opened app settings for permission management");
+            Log.d(TAG, "Error dialog shown for: " + errorInfo.category);
+            
         } catch (Exception e) {
-            Log.e(TAG, "Failed to open app settings", e);
-            
-            // Fallback to general settings
-            try {
-                Intent intent = new Intent(Settings.ACTION_SETTINGS);
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                context.startActivity(intent);
-            } catch (Exception fallbackError) {
-                Log.e(TAG, "Failed to open settings", fallbackError);
+            Log.e(TAG, "Failed to show error dialog", e);
+            // Fallback: notify callback directly
+            if (callback != null) {
+                callback.onDismiss(errorInfo);
             }
         }
     }
     
     /**
      * Check if a dialog is currently showing
+     * @return true if dialog is visible, false otherwise
      */
     public boolean isDialogShowing() {
         return currentDialog != null && currentDialog.isShowing();
     }
     
     /**
-     * Release resources
+     * Dismiss the current dialog if showing
+     */
+    public void dismissCurrentDialog() {
+        if (currentDialog != null && currentDialog.isShowing()) {
+            try {
+                currentDialog.dismiss();
+                Log.d(TAG, "Current dialog dismissed");
+            } catch (Exception e) {
+                Log.w(TAG, "Error dismissing dialog", e);
+            }
+        }
+        currentDialog = null;
+        currentCallback = null;
+    }
+    
+    /**
+     * Release resources and dismiss any showing dialogs
      */
     public void release() {
+        Log.d(TAG, "Releasing ErrorDialogManager resources");
         dismissCurrentDialog();
-        Log.d(TAG, "ErrorDialogManager resources released");
+    }
+    
+    // Private helper methods
+    
+    private String getDialogTitle(@NonNull ErrorHandler.ErrorInfo errorInfo) {
+        switch (errorInfo.category) {
+            case CAMERA_PERMISSION:
+                return "Camera Permission Required";
+            case CAMERA_HARDWARE:
+                return "Camera Error";
+            case OPENCV_PROCESSING:
+                return "Processing Error";
+            case MEMORY_PRESSURE:
+                return "Performance Optimization";
+            case DISPLAY_ERROR:
+                return "Display Error";
+            case SYSTEM_ERROR:
+            default:
+                return "Error";
+        }
+    }
+    
+    private void setupDialogButtons(@NonNull AlertDialog.Builder builder, 
+                                   @NonNull ErrorHandler.ErrorInfo errorInfo) {
+        switch (errorInfo.recoveryStrategy) {
+            case RETRY:
+            case RETRY_WITH_BACKOFF:
+                builder.setPositiveButton("Retry", (dialog, which) -> {
+                    if (currentCallback != null) {
+                        currentCallback.onRetry(errorInfo);
+                    }
+                    dismissCurrentDialog();
+                });
+                builder.setNegativeButton("Cancel", (dialog, which) -> {
+                    if (currentCallback != null) {
+                        currentCallback.onDismiss(errorInfo);
+                    }
+                    dismissCurrentDialog();
+                });
+                break;
+                
+            case FALLBACK:
+                builder.setPositiveButton("Use Basic Mode", (dialog, which) -> {
+                    if (currentCallback != null) {
+                        currentCallback.onUseFallback(errorInfo);
+                    }
+                    dismissCurrentDialog();
+                });
+                builder.setNegativeButton("Retry", (dialog, which) -> {
+                    if (currentCallback != null) {
+                        currentCallback.onRetry(errorInfo);
+                    }
+                    dismissCurrentDialog();
+                });
+                builder.setNeutralButton("Cancel", (dialog, which) -> {
+                    if (currentCallback != null) {
+                        currentCallback.onDismiss(errorInfo);
+                    }
+                    dismissCurrentDialog();
+                });
+                break;
+                
+            case USER_INTERVENTION:
+                if (errorInfo.category == ErrorHandler.ErrorCategory.CAMERA_PERMISSION) {
+                    builder.setPositiveButton("Open Settings", (dialog, which) -> {
+                        if (currentCallback != null) {
+                            currentCallback.onOpenSettings(errorInfo);
+                        }
+                        dismissCurrentDialog();
+                    });
+                }
+                builder.setNegativeButton("Cancel", (dialog, which) -> {
+                    if (currentCallback != null) {
+                        currentCallback.onDismiss(errorInfo);
+                    }
+                    dismissCurrentDialog();
+                });
+                break;
+                
+            case GRACEFUL_DEGRADATION:
+                builder.setPositiveButton("OK", (dialog, which) -> {
+                    if (currentCallback != null) {
+                        currentCallback.onDismiss(errorInfo);
+                    }
+                    dismissCurrentDialog();
+                });
+                break;
+                
+            case NONE:
+            default:
+                builder.setPositiveButton("OK", (dialog, which) -> {
+                    if (currentCallback != null) {
+                        currentCallback.onDismiss(errorInfo);
+                    }
+                    dismissCurrentDialog();
+                });
+                break;
+        }
     }
 }
