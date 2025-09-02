@@ -26,14 +26,18 @@ public class BasicInstanceTest {
     @Test
     public void testCanCreatePerformanceMonitor() {
         // Test that PerformanceMonitor can be created successfully
-        PerformanceMonitor performanceMonitor = new PerformanceMonitor(context);
-        assertNotNull("PerformanceMonitor should be created successfully", performanceMonitor);
-        
-        // Test basic functionality
-        assertEquals("Initial performance level should be HIGH or LOW based on device", 
-                    true, performanceMonitor.getCurrentPerformanceLevel() != null);
-        
-        // Clean up
-        performanceMonitor.release();
+        try {
+            PerformanceMonitor performanceMonitor = new PerformanceMonitor(context);
+            assertNotNull("PerformanceMonitor should be created successfully", performanceMonitor);
+            
+            // Test basic functionality
+            PerformanceMonitor.PerformanceLevel level = performanceMonitor.getCurrentPerformanceLevel();
+            assertNotNull("Performance level should not be null", level);
+            
+            // Clean up
+            performanceMonitor.release();
+        } catch (Exception e) {
+            fail("PerformanceMonitor creation failed: " + e.getMessage());
+        }
     }
 }
