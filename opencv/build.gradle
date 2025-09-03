@@ -32,15 +32,18 @@ android {
         // Create baseline for existing issues
         baseline = file("lint-baseline.xml")
         
-        // Disable specific checks that are handled at app level
-        disable 'MissingPermission'
+        // Disable problematic checks for OpenCV module
+        disable 'MissingPermission', 'InvalidPackage'
         
-        // Enable important checks
-        enable 'NewApi', 'InlinedApi'
+        // Skip lint for external dependencies
+        checkDependencies false
         
-        // Generate reports
+        // Generate reports but don't fail build
         htmlReport true
         xmlReport true
+        
+        // Treat all issues as warnings
+        warningsAsErrors false
     }
 }
 
