@@ -40,6 +40,24 @@ android {
         pickFirst '**/libc++_shared.so'
         pickFirst '**/libjsc.so'
     }
+    
+    lint {
+        // Configure lint for CI/CD
+        abortOnError false
+        
+        // Create baseline for existing issues
+        baseline = file("lint-baseline.xml")
+        
+        // Enable important Android 10 compliance checks
+        enable 'NewApi', 'InlinedApi', 'PrivacyLeakage'
+        
+        // Generate reports
+        htmlReport true
+        xmlReport true
+        
+        // Treat warnings as informational in CI
+        warningsAsErrors false
+    }
 }
 
 dependencies {

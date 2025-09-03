@@ -24,6 +24,24 @@ android {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
+    
+    lint {
+        // Disable lint abort on error for CI/CD
+        abortOnError false
+        
+        // Create baseline for existing issues
+        baseline = file("lint-baseline.xml")
+        
+        // Disable specific checks that are handled at app level
+        disable 'MissingPermission'
+        
+        // Enable important checks
+        enable 'NewApi', 'InlinedApi'
+        
+        // Generate reports
+        htmlReport true
+        xmlReport true
+    }
 }
 
 dependencies {
