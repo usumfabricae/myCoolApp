@@ -74,7 +74,11 @@ public class Android10LifecycleComplianceTest {
         cameraManager = new com.example.opencvcamerastream.camera.CameraManager(mockContext);
         displayManager = new DisplayManager(mockContext);
         errorHandler = new ErrorHandler(mockContext);
-        performanceMonitor = new PerformanceMonitor(mockContext);
+        
+        // Mock PerformanceMonitor instead of instantiating it
+        performanceMonitor = mock(PerformanceMonitor.class);
+        when(performanceMonitor.getCurrentPerformanceLevel()).thenReturn(PerformanceMonitor.PerformanceLevel.HIGH);
+        
         performanceMetricsCollector = new PerformanceMetricsCollector(performanceMonitor);
         
         // Set up mock camera for successful operations
