@@ -699,6 +699,24 @@ workflows:
           echo "Coverage Reports: $(find build-artifacts/coverage-reports -type f | wc -l) files" >> build-artifacts/build-metadata/artifact-summary.txt
           echo "APK Outputs: $(find build-artifacts/apk-outputs -type f | wc -l) files" >> build-artifacts/build-metadata/artifact-summary.txt
           
+          # Create APK download summary
+          echo "=== APK DOWNLOAD INFORMATION ===" >> build-artifacts/build-metadata/artifact-summary.txt
+          if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
+            APK_SIZE=$(ls -lh app/build/outputs/apk/debug/app-debug.apk | awk '{print $5}')
+            echo "✅ APK Generated Successfully!" >> build-artifacts/build-metadata/artifact-summary.txt
+            echo "   File: app-debug.apk" >> build-artifacts/build-metadata/artifact-summary.txt
+            echo "   Size: $APK_SIZE" >> build-artifacts/build-metadata/artifact-summary.txt
+            echo "   Location: app/build/outputs/apk/debug/app-debug.apk" >> build-artifacts/build-metadata/artifact-summary.txt
+            echo "" >> build-artifacts/build-metadata/artifact-summary.txt
+            echo "📱 To download your APK:" >> build-artifacts/build-metadata/artifact-summary.txt
+            echo "   1. Go to codemagic.io dashboard" >> build-artifacts/build-metadata/artifact-summary.txt
+            echo "   2. Open this build (#$CM_BUILD_ID)" >> build-artifacts/build-metadata/artifact-summary.txt
+            echo "   3. Click on 'Artifacts' tab" >> build-artifacts/build-metadata/artifact-summary.txt
+            echo "   4. Download 'app-debug.apk'" >> build-artifacts/build-metadata/artifact-summary.txt
+          else
+            echo "❌ APK not found at expected location" >> build-artifacts/build-metadata/artifact-summary.txt
+          fi
+          
           echo "✅ Artifact collection completed"
           echo "Artifact summary:"
           cat build-artifacts/build-metadata/artifact-summary.txt
@@ -712,10 +730,34 @@ workflows:
     publishing:
       email:
         recipients:
-          - dalessiof@gmail.com  
+          - dalessiof@gmail.com
         notify:
           success: true
           failure: true
+        
+      # Add Slack notifications if you have a workspace (optional)
+      # slack:
+      #   channel: '#builds'
+      #   notify_on_build_start: true
+      #   notify:
+      #     success: true
+      #     failure: true
+      
+      # Add artifacts to make them easily downloadable
+      artifacts:
+        - name: "Debug APK"
+          path: "myCoolApp/app/build/outputs/apk/debug/app-debug.apk"
+        - name: "Build Artifacts"
+          path: "myCoolApp/build-artifacts/**/*"
+      
+      # Add scripts for additional notifications (optional)
+      scripts:
+        - name: "Build Success Notification"
+          script: |
+            echo "🎉 BUILD COMPLETED SUCCESSFULLY! 🎉"
+            echo "Build ID: $CM_BUILD_ID"
+            echo "APK Location: Check Artifacts tab in Codemagic dashboard"
+            echo "Direct link: https://codemagic.io/app/$CM_PROJECT_ID/build/$CM_BUILD_ID"
       
       # Uncomment to publish to Google Play (requires setup)
       # google_play:
@@ -1342,5 +1384,5 @@ workflows:
         recipients:
           - dalessiof@gmail.com
         notify:
-          success: false
+          success: true
           failure: true
