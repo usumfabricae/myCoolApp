@@ -834,21 +834,7 @@ workflows:
       #     success: true
       #     failure: true
       
-      # Add artifacts to make them easily downloadable
-      artifacts:
-        - name: "Debug APK"
-          path: "myCoolApp/app/build/outputs/apk/debug/app-debug.apk"
-        - name: "Build Artifacts"
-          path: "myCoolApp/build-artifacts/**/*"
-      
-      # Add scripts for additional notifications (optional)
-      scripts:
-        - name: "Build Success Notification"
-          script: |
-            echo "🎉 BUILD COMPLETED SUCCESSFULLY! 🎉"
-            echo "Build ID: $CM_BUILD_ID"
-            echo "APK Location: Check Artifacts tab in Codemagic dashboard"
-            echo "Direct link: https://codemagic.io/app/$CM_PROJECT_ID/build/$CM_BUILD_ID"
+      # Note: Artifacts are configured at workflow level, not under publishing
       
       # Uncomment to publish to Google Play (requires setup)
       # google_play:
