@@ -1435,16 +1435,13 @@ workflows:
           find test-artifacts -type f | wc -l | xargs echo "Total files:"
     
     artifacts:
-      # Single APK output (avoid duplicates by collecting from build-artifacts only)
-      - myCoolApp/build-artifacts/apk-outputs/*.apk
+      # Primary APK output (single source)
+      - myCoolApp/app/build/outputs/apk/debug/app-debug.apk
       # Test and validation artifacts
       - myCoolApp/test-artifacts/**/*
-      # Build metadata and reports
-      - myCoolApp/build-artifacts/build-metadata/**/*
-      - myCoolApp/build-artifacts/test-results/**/*
-      - myCoolApp/build-artifacts/lint-results/**/*
-      - myCoolApp/build-artifacts/coverage-reports/**/*
-      # Additional mapping files (if any)
+      # Build reports (excluding APK directories to avoid duplicates)
+      - myCoolApp/app/build/reports/**/*
+      # Additional mapping files
       - myCoolApp/app/build/outputs/**/mapping.txt
     
     publishing:
