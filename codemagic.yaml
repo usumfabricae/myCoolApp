@@ -669,8 +669,11 @@ workflows:
           
           echo "=== COMPREHENSIVE ARTIFACT COLLECTION ==="
           
-          # Create artifact directories (single organized location)
+          # Create artifact directories
           mkdir -p build-artifacts/{test-results,lint-results,coverage-reports,apk-outputs,build-metadata}
+          
+          # Also create root-level artifacts directory for Codemagic
+          mkdir -p "$CM_BUILD_DIR/artifacts"
           
           # Collect test results
           echo "Collecting test results..."
@@ -687,12 +690,13 @@ workflows:
           find . -path "*/jacoco*" -name "*.xml" -exec cp {} build-artifacts/coverage-reports/ \; 2>/dev/null || echo "No XML coverage reports found"
           find . -path "*/jacoco*" -name "index.html" -exec cp {} build-artifacts/coverage-reports/ \; 2>/dev/null || echo "No HTML coverage reports found"
           
-          # Collect APK outputs (single location to avoid duplicates)
+          # Collect APK outputs
           echo "Collecting APK outputs..."
           find . -name "*.apk" -exec cp {} build-artifacts/apk-outputs/ \; 2>/dev/null || echo "No APK files found"
           find . -name "mapping.txt" -exec cp {} build-artifacts/apk-outputs/ \; 2>/dev/null || echo "No mapping files found"
           
-          # Note: APKs are collected in build-artifacts only to avoid duplicates in Codemagic
+          # Also copy APKs to root artifacts directory for Codemagic
+          find . -name "*.apk" -exec cp {} "$CM_BUILD_DIR/artifacts/" \; 2>/dev/null || echo "No APK files found for root copy"
           
           # Generate comprehensive build metadata
           echo "Generating build metadata..."
@@ -756,33 +760,63 @@ workflows:
           echo "Artifact summary:"
           cat build-artifacts/build-metadata/artifact-summary.txt
           
-      - name: Final artifact verification
+      - name: Debug artifact paths and fix collection
         script: |
           source $CM_BUILD_DIR/android_env.sh
           cd "$ANDROID_PROJECT_DIR"
           
-          echo "=== FINAL BUILD VERIFICATION ==="
-          echo "✅ Build completed successfully"
+          echo "=== DEBUGGING ARTIFACT PATHS ==="
+          echo "Current directory: $(pwd)"
+          echo "Build directory: $CM_BUILD_DIR"
+          echo "Android project directory: $ANDROID_PROJECT_DIR"
           
-          # Verify key artifacts exist
-          if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
-            APK_SIZE=$(ls -lh app/build/outputs/apk/debug/app-debug.apk | awk '{print $5}')
-            echo "✅ APK ready for download: app-debug.apk ($APK_SIZE)"
-          fi
+          echo "=== SEARCHING FOR APK FILES ==="
+          find . -name "*.apk" -type f 2>/dev/null | while read apk; do
+            echo "Found APK: $apk"
+            ls -lh "$apk"
+          done
           
-          if [ -d "test-artifacts" ]; then
-            TEST_COUNT=$(find test-artifacts -type f | wc -l)
-            echo "✅ Test artifacts ready: $TEST_COUNT files"
-          fi
+          echo "=== SEARCHING FOR BUILD OUTPUTS ==="
+          find . -path "*/build/outputs/*" -type f 2>/dev/null | head -10
           
+          echo "=== SEARCHING FOR REPORTS ==="
+          find . -path "*/build/reports/*" -type f 2>/dev/null | head -10
+          
+          echo "=== COPYING ARTIFACTS TO ROOT LEVEL ==="
+          # Create artifacts directory at root level for Codemagic
+          mkdir -p "$CM_BUILD_DIR/artifacts"
+          
+          # Copy APK files
+          find . -name "*.apk" -type f -exec cp {} "$CM_BUILD_DIR/artifacts/" \; 2>/dev/null || echo "No APK files found"
+          
+          # Copy build artifacts
           if [ -d "build-artifacts" ]; then
-            BUILD_COUNT=$(find build-artifacts -type f | wc -l)
-            echo "✅ Build artifacts ready: $BUILD_COUNT files"
+            cp -r build-artifacts/* "$CM_BUILD_DIR/artifacts/" 2>/dev/null || echo "No build artifacts found"
           fi
           
-          echo "🎉 Build artifacts will be available in Codemagic dashboard"
+          # Copy reports
+          find . -path "*/build/reports/*" -name "*.html" -exec cp {} "$CM_BUILD_DIR/artifacts/" \; 2>/dev/null || echo "No HTML reports found"
+          find . -path "*/build/reports/*" -name "*.xml" -exec cp {} "$CM_BUILD_DIR/artifacts/" \; 2>/dev/null || echo "No XML reports found"
+          
+          echo "=== FINAL ARTIFACT LISTING ==="
+          echo "Artifacts in $CM_BUILD_DIR/artifacts:"
+          ls -la "$CM_BUILD_DIR/artifacts/" 2>/dev/null || echo "Artifacts directory is empty"
+          
+          echo "Total artifact files: $(find "$CM_BUILD_DIR/artifacts/" -type f 2>/dev/null | wc -l)"
     
-    # Artifacts moved to end of workflow to avoid duplicates
+    artifacts:
+      # Root level artifacts (copied by debug script)
+      - artifacts/**/*
+      # Direct paths from project directory
+      - myCoolApp/build-artifacts/**/*
+      - myCoolApp/app/build/outputs/**/*.apk
+      - myCoolApp/app/build/outputs/**/mapping.txt
+      - myCoolApp/app/build/reports/**/*
+      # Alternative paths in case project structure is different
+      - "**/build/outputs/**/*.apk"
+      - "**/build-artifacts/**/*"
+      - "**/build/reports/**/*.html"
+      - "**/build/reports/**/*.xml"
     
     publishing:
       email:
@@ -1419,7 +1453,8 @@ workflows:
           find test-artifacts -type f | wc -l | xargs echo "Total files:"
     
     artifacts:
-      - /Users/builder/clone/app/build/outputs/apk/debug/app-debug.apk
+      - myCoolApp/test-artifacts/**/*
+      - myCoolApp/app/build/reports/**/*
     
     publishing:
       email:
