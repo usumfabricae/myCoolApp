@@ -804,7 +804,14 @@ workflows:
           
           echo "Total artifact files: $(find "$CM_BUILD_DIR/artifacts/" -type f 2>/dev/null | wc -l)"
     
-    # Artifacts section moved to end of workflow to avoid duplicates
+    artifacts:
+      # Root level artifacts (copied by debug script)
+      - artifacts/**/*
+      # Direct paths from project directory
+      - myCoolApp/build-artifacts/**/*
+      - myCoolApp/app/build/outputs/**/*.apk
+      - myCoolApp/app/build/outputs/**/mapping.txt
+      - myCoolApp/app/build/reports/**/*
     
     publishing:
       email:
@@ -1441,11 +1448,7 @@ workflows:
           find test-artifacts -type f | wc -l | xargs echo "Total files:"
     
     artifacts:
-      # APK output (single source to avoid duplicates)
-      - myCoolApp/app/build/outputs/apk/debug/app-debug.apk
-      # Test and validation artifacts
       - myCoolApp/test-artifacts/**/*
-      # Build reports
       - myCoolApp/app/build/reports/**/*
     
     publishing:
