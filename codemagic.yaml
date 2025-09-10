@@ -1419,7 +1419,7 @@ workflows:
           find test-artifacts -type f | wc -l | xargs echo "Total files:"
     
     artifacts:
-      - app/build/outputs/apk/debug/app-debug.apk
+      - /Users/builder/clone/app/build/outputs/apk/debug/app-debug.apk
     
     publishing:
       email:
