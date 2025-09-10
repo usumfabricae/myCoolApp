@@ -756,47 +756,31 @@ workflows:
           echo "Artifact summary:"
           cat build-artifacts/build-metadata/artifact-summary.txt
           
-      - name: Debug artifact paths and fix collection
+      - name: Final artifact verification
         script: |
           source $CM_BUILD_DIR/android_env.sh
           cd "$ANDROID_PROJECT_DIR"
           
-          echo "=== DEBUGGING ARTIFACT PATHS ==="
-          echo "Current directory: $(pwd)"
-          echo "Build directory: $CM_BUILD_DIR"
-          echo "Android project directory: $ANDROID_PROJECT_DIR"
+          echo "=== FINAL BUILD VERIFICATION ==="
+          echo "✅ Build completed successfully"
           
-          echo "=== SEARCHING FOR APK FILES ==="
-          find . -name "*.apk" -type f 2>/dev/null | while read apk; do
-            echo "Found APK: $apk"
-            ls -lh "$apk"
-          done
-          
-          echo "=== SEARCHING FOR BUILD OUTPUTS ==="
-          find . -path "*/build/outputs/*" -type f 2>/dev/null | head -10
-          
-          echo "=== SEARCHING FOR REPORTS ==="
-          find . -path "*/build/reports/*" -type f 2>/dev/null | head -10
-          
-          echo "=== ARTIFACT VERIFICATION (NO COPYING TO AVOID DUPLICATES) ==="
-          # Just verify artifacts exist, don't copy to avoid duplicates
-          
-          APK_COUNT=$(find . -name "*.apk" -type f | wc -l)
-          echo "APK files found: $APK_COUNT"
-          
-          if [ -d "build-artifacts" ]; then
-            ARTIFACT_COUNT=$(find build-artifacts -type f | wc -l)
-            echo "Build artifacts collected: $ARTIFACT_COUNT files"
+          # Verify key artifacts exist
+          if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
+            APK_SIZE=$(ls -lh app/build/outputs/apk/debug/app-debug.apk | awk '{print $5}')
+            echo "✅ APK ready for download: app-debug.apk ($APK_SIZE)"
           fi
           
-          REPORT_COUNT=$(find . -path "*/build/reports/*" -type f | wc -l)
-          echo "Report files found: $REPORT_COUNT"
+          if [ -d "test-artifacts" ]; then
+            TEST_COUNT=$(find test-artifacts -type f | wc -l)
+            echo "✅ Test artifacts ready: $TEST_COUNT files"
+          fi
           
-          echo "=== FINAL ARTIFACT LISTING ==="
-          echo "Artifacts in $CM_BUILD_DIR/artifacts:"
-          ls -la "$CM_BUILD_DIR/artifacts/" 2>/dev/null || echo "Artifacts directory is empty"
+          if [ -d "build-artifacts" ]; then
+            BUILD_COUNT=$(find build-artifacts -type f | wc -l)
+            echo "✅ Build artifacts ready: $BUILD_COUNT files"
+          fi
           
-          echo "Total artifact files: $(find "$CM_BUILD_DIR/artifacts/" -type f 2>/dev/null | wc -l)"
+          echo "🎉 Build artifacts will be available in Codemagic dashboard"
     
     # Artifacts moved to end of workflow to avoid duplicates
     
