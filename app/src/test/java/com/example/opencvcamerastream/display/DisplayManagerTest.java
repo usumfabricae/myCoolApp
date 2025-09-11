@@ -1,40 +1,31 @@
 package com.example.opencvcamerastream.display;
 
-import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.SurfaceTexture;
 import android.view.TextureView;
-import androidx.test.core.app.ApplicationProvider;
+import android.content.Context;
+
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
-import org.opencv.core.CvType;
-import org.opencv.core.Mat;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 
 import static org.junit.Assert.*;
-import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
  * Unit tests for DisplayManager
- * 
- * Tests the display system functionality including TextureView setup,
- * frame updates, orientation handling, and performance tracking.
- * 
- * Requirements tested:
- * - 3.1: Display processed frames on screen
- * - 3.2: Maintain original aspect ratio
- * - 1.4: Handle device rotation correctly
+ * Requirements: 3.1, 3.2, 3.3, 1.4
  */
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = 29) // Android 10
+@Config(sdk = 29) // Test on Android 10
 public class DisplayManagerTest {
-    
-    private DisplayManager displayManager;
-    private Context context;
+
+    @Mock
+    private Context mockContext;
     
     @Mock
     private TextureView mockTextureView;
@@ -42,196 +33,161 @@ public class DisplayManagerTest {
     @Mock
     private SurfaceTexture mockSurfaceTexture;
     
-    @Mock
-    private DisplayManager.DisplayCallback mockDisplayCallback;
-    
+    private DisplayManager displayManager;
+
     @Before
     public void setUp() {
         MockitoAnnotations.openMocks(this);
-        context = ApplicationProvider.getApplicationContext();
-        displayManager = new DisplayManager(context);
-        
-        // Set up mock TextureView behavior
-        when(mockTextureView.isAvailable()).thenReturn(false);
+        displayManager = new DisplayManager(mockContext);
+    }
+
+    @Test
+    public void testDisplaySetup() {
+        // Test display setup (Requirement 3.1)
         when(mockTextureView.getSurfaceTexture()).thenReturn(mockSurfaceTexture);
-        when(mockTextureView.getWidth()).thenReturn(1920);
-        when(mockTextureView.getHeight()).thenReturn(1080);
-    }
-    
-    @Test
-    public void testDisplayManagerCreation() {
-        // Test that DisplayManager can be created successfully
-        assertNotNull("DisplayManager should be created", displayManager);
-        assertFalse("Display should not be ready initially", displayManager.isDisplayReady());
-        assertEquals("Initial display width should be 0", 0, displayManager.getDisplayWidth());
-        assertEquals("Initial display height should be 0", 0, displayManager.getDisplayHeight());
-    }
-    
-    @Test
-    public void testSetupDisplayWithAvailableTextureView() {
-        // Test setup when TextureView is already available
-        when(mockTextureView.isAvailable()).thenReturn(true);
         
         boolean result = displayManager.setupDisplay(mockTextureView);
         
-        assertTrue("Setup should succeed", result);
-        verify(mockTextureView).setSurfaceTextureListener(displayManager);
-        verify(mockTextureView).getSurfaceTexture();
+        assertTrue("Display setup should succeed", result);
+        assertEquals("TextureView should be set", mockTextureView, displayManager.getTextureView());
     }
-    
+
     @Test
-    public void testSetupDisplayWithUnavailableTextureView() {
-        // Test setup when TextureView is not yet available
-        when(mockTextureView.isAvailable()).thenReturn(false);
-        
-        boolean result = displayManager.setupDisplay(mockTextureView);
-        
-        assertTrue("Setup should succeed even when TextureView not available", result);
-        verify(mockTextureView).setSurfaceTextureListener(displayManager);
-        verify(mockTextureView, never()).getSurfaceTexture();
-    }
-    
-    @Test
-    public void testOnSurfaceTextureAvailable() {
-        // Test surface texture availability callback
-        displayManager.setDisplayCallback(mockDisplayCallback);
-        
-        displayManager.onSurfaceTextureAvailable(mockSurfaceTexture, 1920, 1080);
-        
-        assertTrue("Display should be ready after surface available", displayManager.isDisplayReady());
-        assertEquals("Display width should be set", 1920, displayManager.getDisplayWidth());
-        assertEquals("Display height should be set", 1080, displayManager.getDisplayHeight());
-        verify(mockDisplayCallback).onDisplayReady();
-    }
-    
-    @Test
-    public void testOnSurfaceTextureSizeChanged() {
-        // Test orientation change handling
-        displayManager.setDisplayCallback(mockDisplayCallback);
-        displayManager.onSurfaceTextureAvailable(mockSurfaceTexture, 1920, 1080);
-        
-        // Simulate orientation change
-        displayManager.onSurfaceTextureSizeChanged(mockSurfaceTexture, 1080, 1920);
-        
-        assertEquals("Display width should be updated", 1080, displayManager.getDisplayWidth());
-        assertEquals("Display height should be updated", 1920, displayManager.getDisplayHeight());
-    }
-    
-    @Test
-    public void testOnSurfaceTextureDestroyed() {
-        // Test surface texture destruction
-        displayManager.setDisplayCallback(mockDisplayCallback);
-        displayManager.onSurfaceTextureAvailable(mockSurfaceTexture, 1920, 1080);
-        
-        boolean result = displayManager.onSurfaceTextureDestroyed(mockSurfaceTexture);
-        
-        assertTrue("Should return true to indicate cleanup handled", result);
-        assertFalse("Display should not be ready after destruction", displayManager.isDisplayReady());
-        verify(mockDisplayCallback).onDisplayDestroyed();
-    }
-    
-    @Test
-    public void testUpdateFrameWhenDisplayNotReady() {
-        // Test frame update when display is not ready
-        Mat testMat = new Mat(480, 640, CvType.CV_8UC3);
-        
-        boolean result = displayManager.updateFrame(testMat);
-        
-        assertFalse("Frame update should fail when display not ready", result);
-        
-        testMat.release();
-    }
-    
-    @Test
-    public void testHandleOrientationChange() {
-        // Test explicit orientation change handling
-        displayManager.onSurfaceTextureAvailable(mockSurfaceTexture, 1920, 1080);
-        
-        displayManager.handleOrientationChange(1080, 1920);
-        
-        assertEquals("Display width should be updated", 1080, displayManager.getDisplayWidth());
-        assertEquals("Display height should be updated", 1920, displayManager.getDisplayHeight());
-    }
-    
-    @Test
-    public void testSetDisplayCallback() {
-        // Test setting display callback
-        displayManager.setDisplayCallback(mockDisplayCallback);
-        
-        // Trigger callback
-        displayManager.onSurfaceTextureAvailable(mockSurfaceTexture, 1920, 1080);
-        
-        verify(mockDisplayCallback).onDisplayReady();
-    }
-    
-    @Test
-    public void testSetDisplayCallbackToNull() {
-        // Test setting callback to null (should not crash)
-        displayManager.setDisplayCallback(null);
-        
-        // This should not crash
-        displayManager.onSurfaceTextureAvailable(mockSurfaceTexture, 1920, 1080);
-        
-        assertTrue("Display should still be ready", displayManager.isDisplayReady());
-    }
-    
-    @Test
-    public void testRelease() {
-        // Test resource release
-        displayManager.setDisplayCallback(mockDisplayCallback);
+    public void testFrameUpdate() {
+        // Test frame update functionality (Requirement 3.1)
         displayManager.setupDisplay(mockTextureView);
-        displayManager.onSurfaceTextureAvailable(mockSurfaceTexture, 1920, 1080);
+        Bitmap testBitmap = createTestBitmap();
         
-        displayManager.release();
+        boolean result = displayManager.updateFrame(testBitmap);
         
-        assertFalse("Display should not be ready after release", displayManager.isDisplayReady());
-        verify(mockTextureView).setSurfaceTextureListener(null);
+        assertTrue("Frame update should succeed", result);
     }
-    
+
     @Test
-    public void testMultipleSetupCalls() {
-        // Test that multiple setup calls work correctly
-        boolean result1 = displayManager.setupDisplay(mockTextureView);
-        boolean result2 = displayManager.setupDisplay(mockTextureView);
+    public void testAspectRatioMaintenance() {
+        // Test aspect ratio maintenance (Requirement 3.2)
+        displayManager.setupDisplay(mockTextureView);
         
-        assertTrue("First setup should succeed", result1);
-        assertTrue("Second setup should succeed", result2);
-        verify(mockTextureView, times(2)).setSurfaceTextureListener(displayManager);
+        int originalWidth = 1920;
+        int originalHeight = 1080;
+        
+        displayManager.setOriginalDimensions(originalWidth, originalHeight);
+        
+        assertEquals("Original width should be maintained", 
+                    originalWidth, displayManager.getOriginalWidth());
+        assertEquals("Original height should be maintained", 
+                    originalHeight, displayManager.getOriginalHeight());
     }
-    
+
     @Test
-    public void testDisplayDimensionsInitialState() {
-        // Test initial display dimensions
-        assertEquals("Initial width should be 0", 0, displayManager.getDisplayWidth());
-        assertEquals("Initial height should be 0", 0, displayManager.getDisplayHeight());
+    public void testOrientationChange() {
+        // Test orientation change handling (Requirement 1.4)
+        displayManager.setupDisplay(mockTextureView);
         
-        displayManager.onSurfaceTextureAvailable(mockSurfaceTexture, 1920, 1080);
+        int initialRotation = displayManager.getDisplayRotation();
+        displayManager.handleOrientationChange(90);
         
-        assertEquals("Width should be set after surface available", 1920, displayManager.getDisplayWidth());
-        assertEquals("Height should be set after surface available", 1080, displayManager.getDisplayHeight());
+        assertNotEquals("Display rotation should change", 
+                       initialRotation, displayManager.getDisplayRotation());
     }
-    
+
     @Test
-    public void testOnSurfaceTextureUpdated() {
-        // Test that onSurfaceTextureUpdated doesn't crash (it's a no-op)
-        displayManager.onSurfaceTextureUpdated(mockSurfaceTexture);
+    public void testDisplayUpdatePerformance() {
+        // Test display update performance (Requirement 3.3)
+        displayManager.setupDisplay(mockTextureView);
+        Bitmap testBitmap = createTestBitmap();
         
-        // Should not crash - this is a no-op method
-        assertTrue("Method should complete without issues", true);
+        long startTime = System.currentTimeMillis();
+        displayManager.updateFrame(testBitmap);
+        long updateTime = System.currentTimeMillis() - startTime;
+        
+        // Display update should complete within 16ms for 60 FPS
+        assertTrue("Display update should complete within 16ms", updateTime < 16);
     }
-    
+
     @Test
-    public void testDisplayReadyStateTransitions() {
-        // Test display ready state transitions
-        assertFalse("Initially not ready", displayManager.isDisplayReady());
+    public void testNullFrameHandling() {
+        // Test null frame handling
+        displayManager.setupDisplay(mockTextureView);
         
-        displayManager.onSurfaceTextureAvailable(mockSurfaceTexture, 1920, 1080);
-        assertTrue("Ready after surface available", displayManager.isDisplayReady());
+        boolean result = displayManager.updateFrame(null);
         
-        displayManager.onSurfaceTextureDestroyed(mockSurfaceTexture);
-        assertFalse("Not ready after surface destroyed", displayManager.isDisplayReady());
+        assertFalse("Should handle null frame gracefully", result);
+    }
+
+    @Test
+    public void testTextureViewListener() {
+        // Test TextureView surface texture listener
+        TextureView.SurfaceTextureListener listener = displayManager.getSurfaceTextureListener();
         
-        displayManager.release();
-        assertFalse("Not ready after release", displayManager.isDisplayReady());
+        assertNotNull("Surface texture listener should not be null", listener);
+        
+        // Test listener callbacks
+        listener.onSurfaceTextureAvailable(mockSurfaceTexture, 100, 100);
+        assertTrue("Should handle surface available", displayManager.isSurfaceAvailable());
+        
+        boolean destroyed = listener.onSurfaceTextureDestroyed(mockSurfaceTexture);
+        assertFalse("Should handle surface destruction", displayManager.isSurfaceAvailable());
+    }
+
+    @Test
+    public void testDisplayScaling() {
+        // Test display scaling for different screen sizes
+        displayManager.setupDisplay(mockTextureView);
+        
+        displayManager.setDisplayDimensions(800, 600);
+        displayManager.setOriginalDimensions(1920, 1080);
+        
+        float scaleX = displayManager.getScaleX();
+        float scaleY = displayManager.getScaleY();
+        
+        assertTrue("Scale X should be positive", scaleX > 0);
+        assertTrue("Scale Y should be positive", scaleY > 0);
+    }
+
+    @Test
+    public void testHardwareAcceleration() {
+        // Test hardware acceleration availability
+        when(mockTextureView.isHardwareAccelerated()).thenReturn(true);
+        displayManager.setupDisplay(mockTextureView);
+        
+        boolean hwAccelerated = displayManager.isHardwareAccelerated();
+        
+        assertTrue("Hardware acceleration should be available", hwAccelerated);
+    }
+
+    @Test
+    public void testDisplayCleanup() {
+        // Test display cleanup
+        displayManager.setupDisplay(mockTextureView);
+        
+        displayManager.cleanup();
+        
+        assertNull("TextureView should be null after cleanup", displayManager.getTextureView());
+        assertFalse("Surface should not be available after cleanup", displayManager.isSurfaceAvailable());
+    }
+
+    @Test
+    public void testFrameRateTracking() {
+        // Test frame rate tracking for performance monitoring
+        displayManager.setupDisplay(mockTextureView);
+        Bitmap testBitmap = createTestBitmap();
+        
+        // Update multiple frames
+        for (int i = 0; i < 5; i++) {
+            displayManager.updateFrame(testBitmap);
+            try {
+                Thread.sleep(16); // Simulate 60 FPS timing
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        
+        float fps = displayManager.getCurrentFPS();
+        assertTrue("FPS should be tracked", fps >= 0);
+    }
+
+    private Bitmap createTestBitmap() {
+        return Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888);
     }
 }

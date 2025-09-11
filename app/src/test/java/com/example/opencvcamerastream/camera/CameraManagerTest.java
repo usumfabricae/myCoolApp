@@ -1,43 +1,31 @@
 package com.example.opencvcamerastream.camera;
 
 import android.content.Context;
-import android.content.pm.PackageManager;
 import android.hardware.camera2.CameraAccessException;
-import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
-import android.hardware.camera2.params.StreamConfigurationMap;
-import android.media.Image;
-import android.util.Size;
-
-import androidx.core.app.ActivityCompat;
+import android.hardware.camera2.CaptureRequest;
+import android.os.Handler;
 
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
-import org.mockito.MockedStatic;
 import org.mockito.MockitoAnnotations;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 
 import static org.junit.Assert.*;
-import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Unit tests for CameraManager class
- * 
- * Tests cover:
- * - Camera initialization and cleanup (Requirements 1.2, 5.4)
- * - Error handling and recovery (Requirement 4.2)
- * - Resource management and lifecycle
- * - Android 10 compatibility scenarios
+ * Unit tests for CameraManager
+ * Requirements: 1.2, 1.4, 4.2, 5.4
  */
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = 29) // Test on Android 10 (API 29)
+@Config(sdk = 29) // Test on Android 10
 public class CameraManagerTest {
-    
+
     @Mock
     private Context mockContext;
     
@@ -45,315 +33,118 @@ public class CameraManagerTest {
     private CameraManager mockSystemCameraManager;
     
     @Mock
-    private CameraCharacteristics mockCameraCharacteristics;
+    private CameraDevice mockCameraDevice;
     
     @Mock
-    private StreamConfigurationMap mockStreamConfigurationMap;
-    
-    @Mock
-    private com.example.opencvcamerastream.camera.CameraManager.CameraCallback mockCameraCallback;
-    
-    @Mock
-    private com.example.opencvcamerastream.camera.CameraManager.FrameCallback mockFrameCallback;
-    
-    @Mock
-    private Image mockImage;
+    private Handler mockHandler;
     
     private com.example.opencvcamerastream.camera.CameraManager cameraManager;
-    
+
     @Before
     public void setUp() {
         MockitoAnnotations.openMocks(this);
-        
-        // Mock context to return system camera manager
-        when(mockContext.getApplicationContext()).thenReturn(mockContext);
         when(mockContext.getSystemService(Context.CAMERA_SERVICE)).thenReturn(mockSystemCameraManager);
-        
         cameraManager = new com.example.opencvcamerastream.camera.CameraManager(mockContext);
     }
-    
-    /**
-     * Test camera initialization with granted permissions
-     * Requirement 1.2: Initialize camera when permissions are granted
-     */
+
     @Test
-    public void testInitializeCameraWithPermission() throws CameraAccessException {
-        // Mock permission granted
-        try (MockedStatic<ActivityCompat> mockedActivityCompat = mockStatic(ActivityCompat.class)) {
-            mockedActivityCompat.when(() -> ActivityCompat.checkSelfPermission(any(), any()))
-                    .thenReturn(PackageManager.PERMISSION_GRANTED);
-            
-            // Mock camera list and characteristics
-            String[] cameraIds = {"0", "1"};
-            when(mockSystemCameraManager.getCameraIdList()).thenReturn(cameraIds);
-            when(mockSystemCameraManager.getCameraCharacteristics("0")).thenReturn(mockCameraCharacteristics);
-            
-            // Mock back-facing camera
-            when(mockCameraCharacteristics.get(CameraCharacteristics.LENS_FACING))
-                    .thenReturn(CameraCharacteristics.LENS_FACING_BACK);
-            when(mockCameraCharacteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP))
-                    .thenReturn(mockStreamConfigurationMap);
-            
-            // Mock available sizes
-            Size[] sizes = {new Size(1920, 1080), new Size(1280, 720), new Size(640, 480)};
-            when(mockStreamConfigurationMap.getOutputSizes(anyInt())).thenReturn(sizes);
-            
-            // Test initialization
-            boolean result = cameraManager.initializeCamera();
-            
-            assertTrue("Camera should initialize successfully with permission", result);
-            assertTrue("Camera should be marked as initialized", cameraManager.isInitialized());
-            assertNotNull("Preview size should be set", cameraManager.getPreviewSize());
-        }
-    }
-    
-    /**
-     * Test camera initialization without permission
-     * Requirement 1.2: Handle permission denial gracefully
-     */
-    @Test
-    public void testInitializeCameraWithoutPermission() {
-        // Mock permission denied
-        try (MockedStatic<ActivityCompat> mockedActivityCompat = mockStatic(ActivityCompat.class)) {
-            mockedActivityCompat.when(() -> ActivityCompat.checkSelfPermission(any(), any()))
-                    .thenReturn(PackageManager.PERMISSION_DENIED);
-            
-            cameraManager.setCameraCallback(mockCameraCallback);
-            
-            // Test initialization
-            boolean result = cameraManager.initializeCamera();
-            
-            assertFalse("Camera should not initialize without permission", result);
-            assertFalse("Camera should not be marked as initialized", cameraManager.isInitialized());
-            
-            // Verify error callback was called
-            verify(mockCameraCallback).onCameraError(eq(-1), contains("permission"));
-        }
-    }
-    
-    /**
-     * Test camera initialization with no available cameras
-     * Requirement 4.2: Handle camera unavailability
-     */
-    @Test
-    public void testInitializeCameraWithNoCameras() throws CameraAccessException {
-        // Mock permission granted
-        try (MockedStatic<ActivityCompat> mockedActivityCompat = mockStatic(ActivityCompat.class)) {
-            mockedActivityCompat.when(() -> ActivityCompat.checkSelfPermission(any(), any()))
-                    .thenReturn(PackageManager.PERMISSION_GRANTED);
-            
-            // Mock empty camera list
-            when(mockSystemCameraManager.getCameraIdList()).thenReturn(new String[0]);
-            
-            cameraManager.setCameraCallback(mockCameraCallback);
-            
-            // Test initialization
-            boolean result = cameraManager.initializeCamera();
-            
-            assertFalse("Camera should not initialize with no cameras", result);
-            assertFalse("Camera should not be marked as initialized", cameraManager.isInitialized());
-            
-            // Verify error callback was called
-            verify(mockCameraCallback).onCameraError(eq(-1), contains("No suitable camera"));
-        }
-    }
-    
-    /**
-     * Test camera initialization with CameraAccessException
-     * Requirement 4.2: Handle camera access errors
-     */
-    @Test
-    public void testInitializeCameraWithAccessException() throws CameraAccessException {
-        // Mock permission granted
-        try (MockedStatic<ActivityCompat> mockedActivityCompat = mockStatic(ActivityCompat.class)) {
-            mockedActivityCompat.when(() -> ActivityCompat.checkSelfPermission(any(), any()))
-                    .thenReturn(PackageManager.PERMISSION_GRANTED);
-            
-            // Mock camera access exception
-            when(mockSystemCameraManager.getCameraIdList())
-                    .thenThrow(new CameraAccessException(CameraAccessException.CAMERA_ERROR));
-            
-            cameraManager.setCameraCallback(mockCameraCallback);
-            
-            // Test initialization
-            boolean result = cameraManager.initializeCamera();
-            
-            assertFalse("Camera should not initialize with access exception", result);
-            assertFalse("Camera should not be marked as initialized", cameraManager.isInitialized());
-            
-            // Verify error callback was called
-            verify(mockCameraCallback).onCameraError(eq(-1), contains("Camera access failed"));
-        }
-    }
-    
-    /**
-     * Test camera initialization with custom configuration
-     */
-    @Test
-    public void testInitializeCameraWithCustomConfig() throws CameraAccessException {
-        // Mock permission granted
-        try (MockedStatic<ActivityCompat> mockedActivityCompat = mockStatic(ActivityCompat.class)) {
-            mockedActivityCompat.when(() -> ActivityCompat.checkSelfPermission(any(), any()))
-                    .thenReturn(PackageManager.PERMISSION_GRANTED);
-            
-            // Mock camera setup
-            setupMockCameraForSuccess();
-            
-            // Create custom config
-            com.example.opencvcamerastream.camera.CameraManager.CameraConfig config = 
-                    new com.example.opencvcamerastream.camera.CameraManager.CameraConfig(new Size(640, 480));
-            
-            // Test initialization with custom config
-            boolean result = cameraManager.initializeCamera(config);
-            
-            assertTrue("Camera should initialize with custom config", result);
-            assertTrue("Camera should be marked as initialized", cameraManager.isInitialized());
-        }
-    }
-    
-    /**
-     * Test start preview without initialization
-     */
-    @Test
-    public void testStartPreviewWithoutInitialization() {
-        // Test starting preview without initialization
-        boolean result = cameraManager.startPreview();
-        
-        assertFalse("Preview should not start without initialization", result);
-        assertFalse("Preview should not be marked as active", cameraManager.isPreviewActive());
-    }
-    
-    /**
-     * Test stop preview when not active
-     */
-    @Test
-    public void testStopPreviewWhenNotActive() {
-        // This should not throw any exceptions
-        cameraManager.stopPreview();
-        
-        assertFalse("Preview should remain inactive", cameraManager.isPreviewActive());
-    }
-    
-    /**
-     * Test resource release
-     * Requirement 5.4: Properly release camera resources
-     */
-    @Test
-    public void testResourceRelease() throws CameraAccessException {
-        // Initialize camera first
-        try (MockedStatic<ActivityCompat> mockedActivityCompat = mockStatic(ActivityCompat.class)) {
-            mockedActivityCompat.when(() -> ActivityCompat.checkSelfPermission(any(), any()))
-                    .thenReturn(PackageManager.PERMISSION_GRANTED);
-            
-            setupMockCameraForSuccess();
-            
-            cameraManager.initializeCamera();
-            assertTrue("Camera should be initialized", cameraManager.isInitialized());
-            
-            // Test release
-            cameraManager.release();
-            
-            assertFalse("Camera should not be initialized after release", cameraManager.isInitialized());
-            assertFalse("Preview should not be active after release", cameraManager.isPreviewActive());
-            assertNull("Preview size should be null after release", cameraManager.getPreviewSize());
-        }
-    }
-    
-    /**
-     * Test callback setters
-     */
-    @Test
-    public void testCallbackSetters() {
-        // Test setting callbacks
-        cameraManager.setCameraCallback(mockCameraCallback);
-        cameraManager.setFrameCallback(mockFrameCallback);
-        
-        // Test setting null callbacks (should not throw)
-        cameraManager.setCameraCallback(null);
-        cameraManager.setFrameCallback(null);
-    }
-    
-    /**
-     * Test frame callback functionality
-     */
-    @Test
-    public void testFrameCallback() {
-        cameraManager.setFrameCallback(mockFrameCallback);
-        
-        // Simulate frame available (this would normally be called by ImageReader)
-        // We can't easily test the actual ImageReader callback, but we can verify
-        // the callback is set properly
-        assertNotNull("Frame callback should be set", mockFrameCallback);
-    }
-    
-    /**
-     * Test camera state management
-     */
-    @Test
-    public void testCameraStateManagement() {
-        // Initial state
-        assertFalse("Camera should not be initialized initially", cameraManager.isInitialized());
-        assertFalse("Preview should not be active initially", cameraManager.isPreviewActive());
-        assertNull("Preview size should be null initially", cameraManager.getPreviewSize());
-    }
-    
-    /**
-     * Test multiple initialization calls
-     */
-    @Test
-    public void testMultipleInitializationCalls() throws CameraAccessException {
-        try (MockedStatic<ActivityCompat> mockedActivityCompat = mockStatic(ActivityCompat.class)) {
-            mockedActivityCompat.when(() -> ActivityCompat.checkSelfPermission(any(), any()))
-                    .thenReturn(PackageManager.PERMISSION_GRANTED);
-            
-            setupMockCameraForSuccess();
-            
-            // First initialization
-            boolean result1 = cameraManager.initializeCamera();
-            assertTrue("First initialization should succeed", result1);
-            
-            // Second initialization (should return true without re-initializing)
-            boolean result2 = cameraManager.initializeCamera();
-            assertTrue("Second initialization should return true", result2);
-            
-            assertTrue("Camera should remain initialized", cameraManager.isInitialized());
-        }
-    }
-    
-    /**
-     * Test Android 10 compatibility scenarios
-     */
-    @Test
-    public void testAndroid10Compatibility() throws CameraAccessException {
-        // This test ensures our camera manager works on Android 10 (API 29)
-        try (MockedStatic<ActivityCompat> mockedActivityCompat = mockStatic(ActivityCompat.class)) {
-            mockedActivityCompat.when(() -> ActivityCompat.checkSelfPermission(any(), any()))
-                    .thenReturn(PackageManager.PERMISSION_GRANTED);
-            
-            setupMockCameraForSuccess();
-            
-            // Test initialization on Android 10
-            boolean result = cameraManager.initializeCamera();
-            
-            assertTrue("Camera should work on Android 10", result);
-            assertTrue("Camera should be initialized on Android 10", cameraManager.isInitialized());
-        }
-    }
-    
-    /**
-     * Helper method to set up mock camera for successful operations
-     */
-    private void setupMockCameraForSuccess() throws CameraAccessException {
+    public void testCameraInitialization() throws CameraAccessException {
+        // Test camera initialization (Requirement 1.2)
         String[] cameraIds = {"0"};
         when(mockSystemCameraManager.getCameraIdList()).thenReturn(cameraIds);
-        when(mockSystemCameraManager.getCameraCharacteristics("0")).thenReturn(mockCameraCharacteristics);
         
-        when(mockCameraCharacteristics.get(CameraCharacteristics.LENS_FACING))
-                .thenReturn(CameraCharacteristics.LENS_FACING_BACK);
-        when(mockCameraCharacteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP))
-                .thenReturn(mockStreamConfigurationMap);
+        boolean result = cameraManager.initializeCamera();
         
-        Size[] sizes = {new Size(1280, 720), new Size(640, 480)};
-        when(mockStreamConfigurationMap.getOutputSizes(anyInt())).thenReturn(sizes);
+        assertTrue("Camera should initialize successfully", result);
+        verify(mockSystemCameraManager).getCameraIdList();
+    }
+
+    @Test
+    public void testCameraInitializationFailure() throws CameraAccessException {
+        // Test camera initialization failure handling (Requirement 4.2)
+        when(mockSystemCameraManager.getCameraIdList()).thenThrow(new CameraAccessException(CameraAccessException.CAMERA_ERROR));
+        
+        boolean result = cameraManager.initializeCamera();
+        
+        assertFalse("Camera initialization should fail gracefully", result);
+    }
+
+    @Test
+    public void testStartPreview() {
+        // Test camera preview start (Requirement 1.2)
+        cameraManager.setCameraDevice(mockCameraDevice);
+        
+        boolean result = cameraManager.startPreview();
+        
+        assertTrue("Preview should start successfully", result);
+    }
+
+    @Test
+    public void testStopPreview() {
+        // Test camera preview stop and resource cleanup (Requirement 5.4)
+        cameraManager.setCameraDevice(mockCameraDevice);
+        
+        cameraManager.stopPreview();
+        
+        // Verify cleanup is called
+        verify(mockCameraDevice, timeout(1000)).close();
+    }
+
+    @Test
+    public void testCameraDeviceStateCallback() {
+        // Test camera device state callbacks (Requirement 4.2)
+        CameraDevice.StateCallback callback = cameraManager.getCameraStateCallback();
+        
+        assertNotNull("State callback should not be null", callback);
+        
+        // Test opened callback
+        callback.onOpened(mockCameraDevice);
+        assertEquals("Camera device should be set", mockCameraDevice, cameraManager.getCameraDevice());
+        
+        // Test error callback
+        callback.onError(mockCameraDevice, CameraDevice.StateCallback.ERROR_CAMERA_DEVICE);
+        // Should handle error gracefully without crashing
+    }
+
+    @Test
+    public void testOrientationHandling() {
+        // Test orientation change handling (Requirement 1.4)
+        int initialOrientation = cameraManager.getDisplayRotation();
+        
+        cameraManager.updateDisplayRotation(90);
+        
+        assertNotEquals("Display rotation should be updated", initialOrientation, cameraManager.getDisplayRotation());
+    }
+
+    @Test
+    public void testCameraResourceCleanup() {
+        // Test proper resource cleanup (Requirement 5.4)
+        cameraManager.setCameraDevice(mockCameraDevice);
+        
+        cameraManager.cleanup();
+        
+        verify(mockCameraDevice).close();
+        assertNull("Camera device should be null after cleanup", cameraManager.getCameraDevice());
+    }
+
+    @Test
+    public void testCameraPermissionCheck() {
+        // Test camera permission validation
+        when(mockContext.checkSelfPermission(android.Manifest.permission.CAMERA))
+            .thenReturn(android.content.pm.PackageManager.PERMISSION_GRANTED);
+        
+        boolean hasPermission = cameraManager.hasCameraPermission();
+        
+        assertTrue("Should have camera permission", hasPermission);
+    }
+
+    @Test
+    public void testCameraUnavailableHandling() throws CameraAccessException {
+        // Test camera unavailable scenario (Requirement 4.2)
+        when(mockSystemCameraManager.getCameraIdList()).thenReturn(new String[0]);
+        
+        boolean result = cameraManager.initializeCamera();
+        
+        assertFalse("Should handle no available cameras", result);
     }
 }

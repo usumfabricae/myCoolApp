@@ -1,262 +1,188 @@
 package com.example.opencvcamerastream.permissions;
 
-import android.Manifest;
 import android.app.Activity;
 import android.content.Context;
 import android.content.pm.PackageManager;
-import android.os.Build;
 import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
-import com.example.opencvcamerastream.R;
+
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
-import org.mockito.MockedStatic;
 import org.mockito.MockitoAnnotations;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.annotation.Config;
 
 import static org.junit.Assert.*;
-import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Unit tests for PermissionHandler class
- * 
- * Tests cover:
- * - Basic permission checking
- * - Permission request flows
- * - Android 10 specific scenarios
- * - Callback handling
- * - Error scenarios
+ * Unit tests for PermissionHandler
+ * Requirements: 1.1, 4.1, 6.2, 6.4
  */
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = {Build.VERSION_CODES.Q}) // Test with Android 10
+@Config(sdk = 29) // Test on Android 10
 public class PermissionHandlerTest {
-    
+
     @Mock
     private Activity mockActivity;
     
     @Mock
-    private PermissionHandler.PermissionCallback mockCallback;
+    private Context mockContext;
     
     private PermissionHandler permissionHandler;
     
+    private static final int CAMERA_PERMISSION_REQUEST_CODE = 100;
+
     @Before
     public void setUp() {
         MockitoAnnotations.openMocks(this);
-        
-        // Mock activity context methods
-        when(mockActivity.getPackageName()).thenReturn("com.example.opencvcamerastream");
-        when(mockActivity.getString(R.string.app_name)).thenReturn("OpenCV Camera Stream");
-        when(mockActivity.getString(R.string.camera_permission_rationale))
-                .thenReturn("This app needs camera access to capture and process video frames in real-time.");
-        when(mockActivity.getString(R.string.android_10_camera_privacy_message))
-                .thenReturn("Android 10 provides enhanced camera privacy controls.");
-        
+        when(mockActivity.getApplicationContext()).thenReturn(mockContext);
         permissionHandler = new PermissionHandler(mockActivity);
-        permissionHandler.setPermissionCallback(mockCallback);
     }
-    
+
     @Test
-    public void testIsCameraPermissionGranted_WhenPermissionGranted_ReturnsTrue() {
-        try (MockedStatic<ContextCompat> contextCompatMock = mockStatic(ContextCompat.class)) {
-            contextCompatMock.when(() -> ContextCompat.checkSelfPermission(
-                    mockActivity, Manifest.permission.CAMERA))
-                    .thenReturn(PackageManager.PERMISSION_GRANTED);
-            
-            assertTrue("Should return true when camera permission is granted", 
-                    permissionHandler.isCameraPermissionGranted());
-        }
+    public void testCameraPermissionGranted() {
+        // Test camera permission when already granted (Requirement 1.1)
+        when(mockContext.checkSelfPermission(android.Manifest.permission.CAMERA))
+            .thenReturn(PackageManager.PERMISSION_GRANTED);
+        
+        boolean hasPermission = permissionHandler.hasCameraPermission();
+        
+        assertTrue("Should have camera permission", hasPermission);
     }
-    
+
     @Test
-    public void testIsCameraPermissionGranted_WhenPermissionDenied_ReturnsFalse() {
-        try (MockedStatic<ContextCompat> contextCompatMock = mockStatic(ContextCompat.class)) {
-            contextCompatMock.when(() -> ContextCompat.checkSelfPermission(
-                    mockActivity, Manifest.permission.CAMERA))
-                    .thenReturn(PackageManager.PERMISSION_DENIED);
-            
-            assertFalse("Should return false when camera permission is denied", 
-                    permissionHandler.isCameraPermissionGranted());
-        }
+    public void testCameraPermissionDenied() {
+        // Test camera permission when denied (Requirement 4.1)
+        when(mockContext.checkSelfPermission(android.Manifest.permission.CAMERA))
+            .thenReturn(PackageManager.PERMISSION_DENIED);
+        
+        boolean hasPermission = permissionHandler.hasCameraPermission();
+        
+        assertFalse("Should not have camera permission", hasPermission);
     }
-    
+
     @Test
-    public void testRequestCameraPermission_WhenAlreadyGranted_CallsOnPermissionGranted() {
-        try (MockedStatic<ContextCompat> contextCompatMock = mockStatic(ContextCompat.class)) {
-            contextCompatMock.when(() -> ContextCompat.checkSelfPermission(
-                    mockActivity, Manifest.permission.CAMERA))
-                    .thenReturn(PackageManager.PERMISSION_GRANTED);
-            
-            permissionHandler.requestCameraPermission();
-            
-            verify(mockCallback).onPermissionGranted();
-            verify(mockCallback, never()).onPermissionDenied(anyBoolean());
-        }
+    public void testRequestCameraPermission() {
+        // Test requesting camera permission (Requirement 1.1)
+        when(mockContext.checkSelfPermission(android.Manifest.permission.CAMERA))
+            .thenReturn(PackageManager.PERMISSION_DENIED);
+        
+        permissionHandler.requestCameraPermission();
+        
+        // Verify that permission request was made
+        verify(mockActivity).requestPermissions(
+            eq(new String[]{android.Manifest.permission.CAMERA}),
+            eq(CAMERA_PERMISSION_REQUEST_CODE)
+        );
     }
-    
+
     @Test
-    public void testRequestCameraPermission_WhenRationaleNeeded_RequestsDirectly() {
-        try (MockedStatic<ContextCompat> contextCompatMock = mockStatic(ContextCompat.class);
-             MockedStatic<ActivityCompat> activityCompatMock = mockStatic(ActivityCompat.class)) {
-            
-            contextCompatMock.when(() -> ContextCompat.checkSelfPermission(
-                    mockActivity, Manifest.permission.CAMERA))
-                    .thenReturn(PackageManager.PERMISSION_DENIED);
-            
-            activityCompatMock.when(() -> ActivityCompat.shouldShowRequestPermissionRationale(
-                    mockActivity, Manifest.permission.CAMERA))
-                    .thenReturn(true);
-            
-            permissionHandler.requestCameraPermission();
-            
-            // Should show rationale dialog (tested separately)
-            // Verify no immediate callback is made
-            verify(mockCallback, never()).onPermissionGranted();
-            verify(mockCallback, never()).onPermissionDenied(anyBoolean());
-        }
+    public void testPermissionRationale() {
+        // Test permission rationale for denied permissions (Requirement 4.1)
+        when(ActivityCompat.shouldShowRequestPermissionRationale(mockActivity, android.Manifest.permission.CAMERA))
+            .thenReturn(true);
+        
+        boolean shouldShowRationale = permissionHandler.shouldShowPermissionRationale();
+        
+        assertTrue("Should show permission rationale", shouldShowRationale);
     }
-    
+
     @Test
-    public void testRequestCameraPermission_FirstTimeRequest_RequestsDirectly() {
-        try (MockedStatic<ContextCompat> contextCompatMock = mockStatic(ContextCompat.class);
-             MockedStatic<ActivityCompat> activityCompatMock = mockStatic(ActivityCompat.class)) {
-            
-            contextCompatMock.when(() -> ContextCompat.checkSelfPermission(
-                    mockActivity, Manifest.permission.CAMERA))
-                    .thenReturn(PackageManager.PERMISSION_DENIED);
-            
-            activityCompatMock.when(() -> ActivityCompat.shouldShowRequestPermissionRationale(
-                    mockActivity, Manifest.permission.CAMERA))
-                    .thenReturn(false);
-            
-            permissionHandler.requestCameraPermission();
-            
-            // Should request permission directly
-            activityCompatMock.verify(() -> ActivityCompat.requestPermissions(
-                    eq(mockActivity),
-                    eq(new String[]{Manifest.permission.CAMERA}),
-                    eq(PermissionHandler.CAMERA_PERMISSION_REQUEST_CODE)
-            ));
-        }
-    }
-    
-    @Test
-    public void testHandlePermissionResult_WhenGranted_CallsOnPermissionGranted() {
-        String[] permissions = {Manifest.permission.CAMERA};
+    public void testPermissionCallbackGranted() {
+        // Test permission callback when granted
         int[] grantResults = {PackageManager.PERMISSION_GRANTED};
         
-        permissionHandler.handlePermissionResult(
-                PermissionHandler.CAMERA_PERMISSION_REQUEST_CODE, 
-                permissions, 
-                grantResults
-        );
+        permissionHandler.onPermissionResult(CAMERA_PERMISSION_REQUEST_CODE, grantResults);
         
-        verify(mockCallback).onPermissionGranted();
-        verify(mockCallback, never()).onPermissionDenied(anyBoolean());
+        assertTrue("Permission should be granted after callback", 
+                  permissionHandler.isPermissionGranted());
     }
-    
+
     @Test
-    public void testHandlePermissionResult_WhenDeniedNotPermanently_CallsOnPermissionDenied() {
-        try (MockedStatic<ActivityCompat> activityCompatMock = mockStatic(ActivityCompat.class)) {
-            activityCompatMock.when(() -> ActivityCompat.shouldShowRequestPermissionRationale(
-                    mockActivity, Manifest.permission.CAMERA))
-                    .thenReturn(true); // Not permanently denied
-            
-            String[] permissions = {Manifest.permission.CAMERA};
-            int[] grantResults = {PackageManager.PERMISSION_DENIED};
-            
-            permissionHandler.handlePermissionResult(
-                    PermissionHandler.CAMERA_PERMISSION_REQUEST_CODE, 
-                    permissions, 
-                    grantResults
-            );
-            
-            verify(mockCallback).onPermissionDenied(false);
-        }
+    public void testPermissionCallbackDenied() {
+        // Test permission callback when denied (Requirement 4.1)
+        int[] grantResults = {PackageManager.PERMISSION_DENIED};
+        
+        permissionHandler.onPermissionResult(CAMERA_PERMISSION_REQUEST_CODE, grantResults);
+        
+        assertFalse("Permission should be denied after callback", 
+                   permissionHandler.isPermissionGranted());
     }
-    
+
     @Test
-    public void testHandlePermissionResult_WhenPermanentlyDenied_CallsOnPermissionDeniedWithTrue() {
-        try (MockedStatic<ActivityCompat> activityCompatMock = mockStatic(ActivityCompat.class)) {
-            activityCompatMock.when(() -> ActivityCompat.shouldShowRequestPermissionRationale(
-                    mockActivity, Manifest.permission.CAMERA))
-                    .thenReturn(false); // Permanently denied
-            
-            String[] permissions = {Manifest.permission.CAMERA};
-            int[] grantResults = {PackageManager.PERMISSION_DENIED};
-            
-            permissionHandler.handlePermissionResult(
-                    PermissionHandler.CAMERA_PERMISSION_REQUEST_CODE, 
-                    permissions, 
-                    grantResults
-            );
-            
-            verify(mockCallback).onPermissionDenied(true);
-        }
+    public void testAndroid10PrivacyCompliance() {
+        // Test Android 10 privacy compliance (Requirement 6.2, 6.4)
+        when(mockContext.checkSelfPermission(android.Manifest.permission.CAMERA))
+            .thenReturn(PackageManager.PERMISSION_DENIED);
+        
+        // Android 10 enhanced privacy controls
+        boolean isAndroid10Compliant = permissionHandler.isAndroid10PrivacyCompliant();
+        
+        assertTrue("Should be Android 10 privacy compliant", isAndroid10Compliant);
     }
-    
+
     @Test
-    public void testHandlePermissionResult_WrongRequestCode_DoesNothing() {
-        String[] permissions = {Manifest.permission.CAMERA};
+    public void testPermissionPermanentlyDenied() {
+        // Test handling of permanently denied permissions
+        when(mockContext.checkSelfPermission(android.Manifest.permission.CAMERA))
+            .thenReturn(PackageManager.PERMISSION_DENIED);
+        when(ActivityCompat.shouldShowRequestPermissionRationale(mockActivity, android.Manifest.permission.CAMERA))
+            .thenReturn(false);
+        
+        boolean isPermanentlyDenied = permissionHandler.isPermissionPermanentlyDenied();
+        
+        assertTrue("Permission should be permanently denied", isPermanentlyDenied);
+    }
+
+    @Test
+    public void testPermissionDialogShown() {
+        // Test that permission dialog is shown when needed
+        when(mockContext.checkSelfPermission(android.Manifest.permission.CAMERA))
+            .thenReturn(PackageManager.PERMISSION_DENIED);
+        
+        boolean dialogShown = permissionHandler.showPermissionDialog();
+        
+        assertTrue("Permission dialog should be shown", dialogShown);
+    }
+
+    @Test
+    public void testMultiplePermissionRequests() {
+        // Test handling multiple permission requests
+        when(mockContext.checkSelfPermission(android.Manifest.permission.CAMERA))
+            .thenReturn(PackageManager.PERMISSION_DENIED);
+        
+        permissionHandler.requestCameraPermission();
+        permissionHandler.requestCameraPermission(); // Second request
+        
+        // Should handle multiple requests gracefully
+        verify(mockActivity, atLeastOnce()).requestPermissions(any(), anyInt());
+    }
+
+    @Test
+    public void testPermissionStateTracking() {
+        // Test permission state tracking
+        assertFalse("Initial permission state should be false", 
+                   permissionHandler.isPermissionGranted());
+        
+        // Simulate permission granted
+        int[] grantResults = {PackageManager.PERMISSION_GRANTED};
+        permissionHandler.onPermissionResult(CAMERA_PERMISSION_REQUEST_CODE, grantResults);
+        
+        assertTrue("Permission state should be updated", 
+                  permissionHandler.isPermissionGranted());
+    }
+
+    @Test
+    public void testInvalidPermissionRequestCode() {
+        // Test handling invalid permission request codes
         int[] grantResults = {PackageManager.PERMISSION_GRANTED};
         
-        permissionHandler.handlePermissionResult(
-                9999, // Wrong request code
-                permissions, 
-                grantResults
-        );
+        permissionHandler.onPermissionResult(999, grantResults); // Invalid code
         
-        verify(mockCallback, never()).onPermissionGranted();
-        verify(mockCallback, never()).onPermissionDenied(anyBoolean());
-    }
-    
-    @Test
-    public void testHandlePermissionResult_EmptyResults_CallsOnPermissionDenied() {
-        String[] permissions = {Manifest.permission.CAMERA};
-        int[] grantResults = {}; // Empty results
-        
-        permissionHandler.handlePermissionResult(
-                PermissionHandler.CAMERA_PERMISSION_REQUEST_CODE, 
-                permissions, 
-                grantResults
-        );
-        
-        verify(mockCallback).onPermissionDenied(anyBoolean());
-    }
-    
-    @Test
-    public void testSetPermissionCallback_UpdatesCallback() {
-        PermissionHandler.PermissionCallback newCallback = mock(PermissionHandler.PermissionCallback.class);
-        
-        permissionHandler.setPermissionCallback(newCallback);
-        
-        // Test that new callback is used
-        try (MockedStatic<ContextCompat> contextCompatMock = mockStatic(ContextCompat.class)) {
-            contextCompatMock.when(() -> ContextCompat.checkSelfPermission(
-                    mockActivity, Manifest.permission.CAMERA))
-                    .thenReturn(PackageManager.PERMISSION_GRANTED);
-            
-            permissionHandler.requestCameraPermission();
-            
-            verify(newCallback).onPermissionGranted();
-            verify(mockCallback, never()).onPermissionGranted();
-        }
-    }
-    
-    @Test
-    public void testNullCallback_DoesNotCrash() {
-        permissionHandler.setPermissionCallback(null);
-        
-        try (MockedStatic<ContextCompat> contextCompatMock = mockStatic(ContextCompat.class)) {
-            contextCompatMock.when(() -> ContextCompat.checkSelfPermission(
-                    mockActivity, Manifest.permission.CAMERA))
-                    .thenReturn(PackageManager.PERMISSION_GRANTED);
-            
-            // Should not crash with null callback
-            permissionHandler.requestCameraPermission();
-        }
+        // Should handle invalid codes gracefully without crashing
+        assertFalse("Invalid request code should not affect permission state", 
+                   permissionHandler.isPermissionGranted());
     }
 }
