@@ -101,8 +101,10 @@ public class Android10ComplianceValidatorTest {
         Android10ComplianceValidator.ComplianceResult result = validator.validateCompliance();
         
         assertTrue("Should be compliant when all requirements are met", result.isCompliant);
-        assertEquals("Should have no critical issues", 0, 
-                result.issues.stream().mapToInt(i -> i.severity == Android10ComplianceValidator.ComplianceIssue.Severity.CRITICAL ? 1 : 0).sum());
+        long criticalCount = result.issues.stream()
+                .filter(i -> i.severity == Android10ComplianceValidator.ComplianceIssue.Severity.CRITICAL)
+                .count();
+        assertEquals("Should have no critical issues", 0, criticalCount);
         assertTrue("Summary should indicate compliance", result.summary.contains("PASSED"));
     }
     
@@ -140,9 +142,9 @@ public class Android10ComplianceValidatorTest {
         
         // Should have critical scoped storage issue
         boolean hasCriticalScopedStorageIssue = result.issues.stream()
-                .anyMatch(issue -> issue.category.equals("Scoped Storage") && 
+                .anyMatch(issue -> "Scoped Storage".equals(issue.category) && 
                          issue.severity == Android10ComplianceValidator.ComplianceIssue.Severity.CRITICAL &&
-                         issue.requirement.equals("6.1"));
+                         "6.1".equals(issue.requirement));
         
         assertTrue("Should have critical scoped storage issue when using legacy storage", 
                 hasCriticalScopedStorageIssue);
@@ -186,9 +188,9 @@ public class Android10ComplianceValidatorTest {
         
         // Should have critical camera privacy issue
         boolean hasCriticalCameraIssue = result.issues.stream()
-                .anyMatch(issue -> issue.category.equals("Camera Privacy") && 
+                .anyMatch(issue -> "Camera Privacy".equals(issue.category) && 
                          issue.severity == Android10ComplianceValidator.ComplianceIssue.Severity.CRITICAL &&
-                         issue.requirement.equals("6.2"));
+                         "6.2".equals(issue.requirement));
         
         assertTrue("Should have critical camera privacy issue when permission not declared", 
                 hasCriticalCameraIssue);
