@@ -1461,26 +1461,7 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         });
     }
     
-    /**
-     * Handle OpenCV initialization failure - continue with limited functionality
-     */
-    private void handleOpenCVInitializationFailure() {
-        Log.w(TAG, "OpenCV initialization failed, app will continue with limited functionality");
-        Log.i(TAG, "To fix this issue, run: ./scripts/setup-opencv.sh or ./scripts/fix-opencv-immediate.sh");
-        
-        isOpenCVInitialized = false;
-        
-        // Continue with camera initialization even without OpenCV
-        // The app will show unprocessed camera frames
-        runOnUiThread(() -> {
-            Toast.makeText(this, "Camera ready - OpenCV processing unavailable", Toast.LENGTH_LONG).show();
-        });
-        
-        // Initialize camera components even without OpenCV
-        if (permissionHandler != null && permissionHandler.isCameraPermissionGranted()) {
-            initializeCameraComponents();
-        }
-    }
+
     
     /**
      * Pre-load system libraries that OpenCV depends on
