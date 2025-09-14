@@ -657,11 +657,13 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         isOpenCVInitialized = false;
         
         runOnUiThread(() -> {
-            Toast.makeText(this, "OpenCV initialization failed. App will show unprocessed camera frames.", 
+            Toast.makeText(this, "OpenCV libraries not found. Camera will work without processing.\n" +
+                    "To enable processing, please run the OpenCV setup script.", 
                     Toast.LENGTH_LONG).show();
         });
         
         Log.w(TAG, "OpenCV initialization failed, app will continue with limited functionality");
+        Log.i(TAG, "To fix this issue, run: ./scripts/setup-opencv.sh or ./scripts/fix-opencv-immediate.sh");
         
         // Continue with camera initialization even without OpenCV
         if (permissionHandler != null && permissionHandler.isCameraPermissionGranted()) {
@@ -676,13 +678,19 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         
         Log.d(TAG, "Activity resumed, initializing OpenCV and checking camera permissions");
         
-        // Initialize OpenCV when activity resumes
-        if (!OpenCVLoader.initDebug()) {
-            Log.d(TAG, "Internal OpenCV library not found. Using OpenCV Manager for initialization");
-            OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION, this, openCVLoaderCallback);
-        } else {
-            Log.d(TAG, "OpenCV library found inside package. Using it!");
-            openCVLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
+        // Initialize OpenCV when activity resumes with better error handling
+        try {
+            if (!OpenCVLoader.initDebug()) {
+                Log.d(TAG, "Internal OpenCV library not found. Using OpenCV Manager for initialization");
+                OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION, this, openCVLoaderCallback);
+            } else {
+                Log.d(TAG, "OpenCV library found inside package. Using it!");
+                openCVLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "OpenCV initialization error: " + e.getMessage());
+            // Continue without OpenCV - the app will show unprocessed frames
+            handleOpenCVInitializationFailure();
         }
         
         // Check and request camera permission when app comes to foreground

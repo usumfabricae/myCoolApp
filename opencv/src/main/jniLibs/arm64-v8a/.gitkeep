@@ -1,0 +1,2 @@
+# Placeholder for OpenCV native libraries (arm64-v8a)
+# The actual .so files should be placed here from the OpenCV Android SDK

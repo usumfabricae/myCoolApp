@@ -39,6 +39,15 @@ android {
     packagingOptions {
         pickFirst '**/libc++_shared.so'
         pickFirst '**/libjsc.so'
+        pickFirst '**/libopencv_java4.so'
+        pickFirst '**/libopencv_java3.so'
+    }
+    
+    // Ensure native libraries are included
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ['src/main/jniLibs']
+        }
     }
     
     lint {
