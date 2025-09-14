@@ -678,20 +678,8 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         
         Log.d(TAG, "Activity resumed, initializing OpenCV and checking camera permissions");
         
-        // Initialize OpenCV when activity resumes with better error handling
-        try {
-            if (!OpenCVLoader.initDebug()) {
-                Log.d(TAG, "Internal OpenCV library not found. Using OpenCV Manager for initialization");
-                OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION, this, openCVLoaderCallback);
-            } else {
-                Log.d(TAG, "OpenCV library found inside package. Using it!");
-                openCVLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "OpenCV initialization error: " + e.getMessage());
-            // Continue without OpenCV - the app will show unprocessed frames
-            handleOpenCVInitializationFailure();
-        }
+        // Initialize OpenCV with system library pre-loading
+        initializeOpenCVWithSystemLibraries();
         
         // Check and request camera permission when app comes to foreground
         // This handles Android 10 background activity restrictions
@@ -1367,6 +1355,172 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             }
         } else {
             Log.i(TAG, "Enhanced privacy controls not required for API < 29");
+        }
+    }
+    
+    /**
+     * Initialize OpenCV with system library pre-loading to handle libc++_shared.so dependency
+     * This method addresses the common issue where OpenCV can't find libc++_shared.so
+     * even when it's available on the system at /lib/libc++_shared.so
+     */
+    private void initializeOpenCVWithSystemLibraries() {
+        Log.d(TAG, "Initializing OpenCV with system library pre-loading");
+        
+        try {
+            // Log library environment for debugging
+            logLibraryEnvironment();
+            
+            // Pre-load system libraries that OpenCV depends on
+            preloadSystemLibraries();
+            
+            // Now try OpenCV initialization with better error handling
+            boolean openCVInitialized = false;
+            
+            try {
+                // Try static initialization first (uses bundled libraries)
+                if (OpenCVLoader.initDebug()) {
+                    Log.d(TAG, "OpenCV initialized successfully with static loading");
+                    openCVInitialized = true;
+                    handleOpenCVInitializationSuccess();
+                } else {
+                    Log.d(TAG, "Static OpenCV initialization failed, trying async initialization");
+                }
+            } catch (UnsatisfiedLinkError e) {
+                Log.w(TAG, "Static OpenCV initialization failed with UnsatisfiedLinkError: " + e.getMessage());
+                Log.i(TAG, "This is expected if libc++_shared.so is not bundled with the app");
+            } catch (Exception e) {
+                Log.w(TAG, "Static OpenCV initialization failed with exception: " + e.getMessage());
+            }
+            
+            // If static initialization failed, try async initialization (uses OpenCV Manager)
+            if (!openCVInitialized) {
+                Log.d(TAG, "Attempting async OpenCV initialization via OpenCV Manager");
+                try {
+                    OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION, this, new BaseLoaderCallback(this) {
+                        @Override
+                        public void onManagerConnected(int status) {
+                            switch (status) {
+                                case LoaderCallbackInterface.SUCCESS:
+                                    Log.d(TAG, "OpenCV loaded successfully via OpenCV Manager");
+                                    handleOpenCVInitializationSuccess();
+                                    break;
+                                case LoaderCallbackInterface.INIT_FAILED:
+                                    Log.e(TAG, "OpenCV initialization failed via OpenCV Manager");
+                                    handleOpenCVInitializationFailure();
+                                    break;
+                                case LoaderCallbackInterface.INSTALL_CANCELED:
+                                    Log.w(TAG, "OpenCV Manager installation was canceled");
+                                    handleOpenCVInitializationFailure();
+                                    break;
+                                case LoaderCallbackInterface.INCOMPATIBLE_MANAGER_VERSION:
+                                    Log.e(TAG, "Incompatible OpenCV Manager version");
+                                    handleOpenCVInitializationFailure();
+                                    break;
+                                case LoaderCallbackInterface.MARKET_ERROR:
+                                    Log.e(TAG, "Google Play Market error during OpenCV Manager installation");
+                                    handleOpenCVInitializationFailure();
+                                    break;
+                                default:
+                                    Log.e(TAG, "Unknown OpenCV Manager status: " + status);
+                                    handleOpenCVInitializationFailure();
+                                    break;
+                            }
+                        }
+                    });
+                } catch (Exception e) {
+                    Log.e(TAG, "Async OpenCV initialization also failed: " + e.getMessage());
+                    handleOpenCVInitializationFailure();
+                }
+            }
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Critical error during OpenCV initialization: " + e.getMessage());
+            handleOpenCVInitializationFailure();
+        }
+    }
+    
+    /**
+     * Handle successful OpenCV initialization
+     */
+    private void handleOpenCVInitializationSuccess() {
+        Log.i(TAG, "OpenCV initialization completed successfully");
+        isOpenCVInitialized = true;
+        
+        // Initialize OpenCV processor now that OpenCV is ready
+        if (openCVProcessor != null) {
+            openCVProcessor.initializeOpenCV();
+        }
+        
+        // Start frame processing if camera is ready
+        if (frameProcessor != null && cameraManager != null && cameraManager.isInitialized()) {
+            frameProcessor.start();
+        }
+        
+        runOnUiThread(() -> {
+            Toast.makeText(this, "OpenCV ready - camera processing enabled", Toast.LENGTH_SHORT).show();
+        });
+    }
+    
+    /**
+     * Handle OpenCV initialization failure - continue with limited functionality
+     */
+    private void handleOpenCVInitializationFailure() {
+        Log.w(TAG, "OpenCV initialization failed, app will continue with limited functionality");
+        Log.i(TAG, "To fix this issue, run: ./scripts/setup-opencv.sh or ./scripts/fix-opencv-immediate.sh");
+        
+        isOpenCVInitialized = false;
+        
+        // Continue with camera initialization even without OpenCV
+        // The app will show unprocessed camera frames
+        runOnUiThread(() -> {
+            Toast.makeText(this, "Camera ready - OpenCV processing unavailable", Toast.LENGTH_LONG).show();
+        });
+        
+        // Initialize camera components even without OpenCV
+        if (permissionHandler != null && permissionHandler.isCameraPermissionGranted()) {
+            initializeCameraComponents();
+        }
+    }
+    
+    /**
+     * Pre-load system libraries that OpenCV depends on
+     */
+    private void preloadSystemLibraries() {
+        Log.d(TAG, "Attempting to pre-load system libraries");
+        
+        // List of libraries to try pre-loading
+        String[] systemLibraries = {
+            "c++_shared",  // libc++_shared.so
+            "log",         // liblog.so (Android logging)
+            "z",           // libz.so (compression)
+            "dl"           // libdl.so (dynamic loading)
+        };
+        
+        for (String libName : systemLibraries) {
+            try {
+                System.loadLibrary(libName);
+                Log.d(TAG, "Successfully pre-loaded system library: " + libName);
+            } catch (UnsatisfiedLinkError e) {
+                Log.d(TAG, "Could not pre-load system library " + libName + ": " + e.getMessage());
+            } catch (Exception e) {
+                Log.w(TAG, "Unexpected error pre-loading " + libName + ": " + e.getMessage());
+            }
+        }
+    }
+    
+    /**
+     * Log library environment for debugging
+     */
+    private void logLibraryEnvironment() {
+        Log.d(TAG, "=== NATIVE LIBRARY ENVIRONMENT ===");
+        Log.d(TAG, "java.library.path: " + System.getProperty("java.library.path"));
+        
+        // Test if we can access the system libc++_shared.so
+        try {
+            System.loadLibrary("c++_shared");
+            Log.d(TAG, "System libc++_shared.so: AVAILABLE");
+        } catch (UnsatisfiedLinkError e) {
+            Log.d(TAG, "System libc++_shared.so: NOT AVAILABLE - " + e.getMessage());
         }
     }
 }

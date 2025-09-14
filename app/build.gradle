@@ -22,6 +22,13 @@ android {
         ndk {
             abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
         }
+        
+        // Configure native library loading to find system libraries
+        externalNativeBuild {
+            cmake {
+                arguments "-DANDROID_STL=c++_shared"
+            }
+        }
     }
 
     buildTypes {
@@ -50,6 +57,9 @@ android {
         // Ensure native libraries are not stripped
         doNotStrip '**/libc++_shared.so'
         doNotStrip '**/libopencv_java4.so'
+        
+        // Allow system libraries to be used as fallback
+        merge '**/libc++_shared.so'
     }
     
     // Ensure native libraries are included
