@@ -1448,7 +1448,7 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         
         // Initialize OpenCV processor now that OpenCV is ready
         if (openCVProcessor != null) {
-            openCVProcessor.initializeOpenCV();
+            openCVProcessor.initialize();
         }
         
         // Start frame processing if camera is ready
