@@ -1477,8 +1477,20 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             try {
                 System.loadLibrary(libName);
                 Log.d(TAG, "Successfully pre-loaded system library: " + libName);
+                
+                // Special handling for libc++_shared
+                if ("c++_shared".equals(libName)) {
+                    Log.i(TAG, "✅ libc++_shared.so loaded successfully - OpenCV should work");
+                }
             } catch (UnsatisfiedLinkError e) {
                 Log.d(TAG, "Could not pre-load system library " + libName + ": " + e.getMessage());
+                
+                // Special handling for libc++_shared failure
+                if ("c++_shared".equals(libName)) {
+                    Log.w(TAG, "❌ Failed to load libc++_shared.so - OpenCV will likely fail");
+                    Log.w(TAG, "Error details: " + e.getMessage());
+                    Log.w(TAG, "This suggests libc++_shared.so is not properly included in the APK");
+                }
             } catch (Exception e) {
                 Log.w(TAG, "Unexpected error pre-loading " + libName + ": " + e.getMessage());
             }
@@ -1490,10 +1502,16 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
      */
     private void logLibraryEnvironment() {
         Log.d(TAG, "=== NATIVE LIBRARY ENVIRONMENT ===");
-        Log.d(TAG, "Using static C++ standard library linking (ANDROID_STL=c++_static)");
+        Log.d(TAG, "Using shared C++ standard library linking (ANDROID_STL=c++_shared)");
         Log.d(TAG, "java.library.path: " + System.getProperty("java.library.path"));
         
-        // Note: Not testing libc++_shared.so since we're using static linking
-        Log.d(TAG, "libc++_shared.so: STATICALLY LINKED (not required as separate library)");
+        // Test if we can load libc++_shared.so
+        try {
+            System.loadLibrary("c++_shared");
+            Log.d(TAG, "libc++_shared.so: SUCCESSFULLY LOADED");
+        } catch (UnsatisfiedLinkError e) {
+            Log.w(TAG, "libc++_shared.so: FAILED TO LOAD - " + e.getMessage());
+            Log.d(TAG, "This may cause OpenCV loading to fail");
+        }
     }
 }

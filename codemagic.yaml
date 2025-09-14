@@ -524,15 +524,23 @@ workflows:
                   echo "✅ Successfully added libc++_shared.so from NDK to OpenCV module"
                   
                   # Also copy to app module to ensure inclusion in APK
-                  echo "Copying libc++_shared.so to app module for APK inclusion..."
+                  echo "Copying ALL OpenCV libraries to app module for guaranteed APK inclusion..."
                   mkdir -p app/src/main/jniLibs
                   
+                  # Copy all libraries from OpenCV module to app module
                   for arch_dir in opencv/src/main/jniLibs/*/; do
-                    if [ -d "$arch_dir" ] && [ -f "$arch_dir/libc++_shared.so" ]; then
+                    if [ -d "$arch_dir" ]; then
                       arch_name=$(basename "$arch_dir")
                       mkdir -p "app/src/main/jniLibs/$arch_name"
-                      cp "$arch_dir/libc++_shared.so" "app/src/main/jniLibs/$arch_name/"
-                      echo "✅ Copied libc++_shared.so to app module for $arch_name"
+                      
+                      # Copy all .so files for this architecture
+                      for lib_file in "$arch_dir"/*.so; do
+                        if [ -f "$lib_file" ]; then
+                          lib_name=$(basename "$lib_file")
+                          cp "$lib_file" "app/src/main/jniLibs/$arch_name/"
+                          echo "✅ Copied $lib_name to app module for $arch_name"
+                        fi
+                      done
                     fi
                   done
                   
@@ -654,6 +662,10 @@ workflows:
           else
             echo "✅ libc++_shared.so found in app module - should be included in APK"
           fi
+          
+          # Force a clean to ensure libraries are properly included
+          echo "Performing clean build to ensure library inclusion..."
+          $GRADLE_EXECUTABLE clean
       
       - name: Verify OpenCV libraries in APK
         script: |
@@ -798,7 +810,8 @@ workflows:
           echo "  Gradle: $($GRADLE_EXECUTABLE --version | head -1)"
           echo "  Android Gradle Plugin: $(grep 'com.android.application' build.gradle)"
           
-          # Build with comprehensive error handling
+          # Build with comprehensive error handling and library verification
+          echo "Building APK with library inclusion verification..."
           if ! $GRADLE_EXECUTABLE assembleDebug --stacktrace --info; then
             echo "❌ Debug APK build failed"
             echo "=== BUILD FAILURE ANALYSIS ==="
