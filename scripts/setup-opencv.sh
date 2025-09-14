@@ -118,6 +118,69 @@ if [ -d "$OPENCV_NATIVE_LIBS" ]; then
     echo "✅ OpenCV native libraries copied successfully"
     echo "Available architectures:"
     ls -la opencv/src/main/jniLibs/
+    
+    # Add libc++_shared.so from Android NDK if available
+    echo "Adding libc++_shared.so from Android NDK..."
+    if [ -n "$ANDROID_NDK_ROOT" ] && [ -d "$ANDROID_NDK_ROOT" ]; then
+        echo "Android NDK found at: $ANDROID_NDK_ROOT"
+        
+        for arch_dir in opencv/src/main/jniLibs/*/; do
+            if [ -d "$arch_dir" ]; then
+                arch_name=$(basename "$arch_dir")
+                echo "Processing architecture: $arch_name"
+                
+                # Map architecture names to NDK paths
+                case "$arch_name" in
+                    "arm64-v8a")
+                        NDK_PATHS=(
+                            "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android"
+                            "$ANDROID_NDK_ROOT/sources/cxx-stl/llvm-libc++/libs/$arch_name"
+                        )
+                        ;;
+                    "armeabi-v7a")
+                        NDK_PATHS=(
+                            "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/arm-linux-androideabi"
+                            "$ANDROID_NDK_ROOT/sources/cxx-stl/llvm-libc++/libs/$arch_name"
+                        )
+                        ;;
+                    "x86")
+                        NDK_PATHS=(
+                            "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/i686-linux-android"
+                            "$ANDROID_NDK_ROOT/sources/cxx-stl/llvm-libc++/libs/$arch_name"
+                        )
+                        ;;
+                    "x86_64")
+                        NDK_PATHS=(
+                            "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/x86_64-linux-android"
+                            "$ANDROID_NDK_ROOT/sources/cxx-stl/llvm-libc++/libs/$arch_name"
+                        )
+                        ;;
+                    *)
+                        echo "⚠️  Unknown architecture: $arch_name, skipping"
+                        continue
+                        ;;
+                esac
+                
+                # Try each possible NDK path
+                FOUND_LIBC=false
+                for ndk_path in "${NDK_PATHS[@]}"; do
+                    if [ -f "$ndk_path/libc++_shared.so" ]; then
+                        cp "$ndk_path/libc++_shared.so" "$arch_dir/"
+                        echo "✅ Added libc++_shared.so for $arch_name from $ndk_path"
+                        FOUND_LIBC=true
+                        break
+                    fi
+                done
+                
+                if [ "$FOUND_LIBC" = false ]; then
+                    echo "⚠️  Could not find libc++_shared.so for $arch_name in NDK"
+                fi
+            fi
+        done
+    else
+        echo "⚠️  Android NDK not found or ANDROID_NDK_ROOT not set"
+        echo "libc++_shared.so will need to be added during CI/CD build"
+    fi
 else
     echo "❌ OpenCV native libraries not found at $OPENCV_NATIVE_LIBS"
     exit 1

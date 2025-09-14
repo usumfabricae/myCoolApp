@@ -17,6 +17,11 @@ android {
         
         // Android 10 compatibility configurations
         vectorDrawables.useSupportLibrary = true
+        
+        // NDK configuration for OpenCV native libraries
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+        }
     }
 
     buildTypes {
@@ -41,6 +46,10 @@ android {
         pickFirst '**/libjsc.so'
         pickFirst '**/libopencv_java4.so'
         pickFirst '**/libopencv_java3.so'
+        
+        // Ensure native libraries are not stripped
+        doNotStrip '**/libc++_shared.so'
+        doNotStrip '**/libopencv_java4.so'
     }
     
     // Ensure native libraries are included
