@@ -539,6 +539,33 @@ workflows:
                           lib_name=$(basename "$lib_file")
                           cp "$lib_file" "app/src/main/jniLibs/$arch_name/"
                           echo "✅ Copied $lib_name to app module for $arch_name"
+                          
+                          # Verify the copied file
+                          if [ -f "app/src/main/jniLibs/$arch_name/$lib_name" ]; then
+                            file_size=$(stat -c%s "app/src/main/jniLibs/$arch_name/$lib_name" 2>/dev/null || stat -f%z "app/src/main/jniLibs/$arch_name/$lib_name" 2>/dev/null || echo "unknown")
+                            echo "  Verified: $lib_name ($file_size bytes)"
+                          else
+                            echo "  ❌ Copy verification failed for $lib_name"
+                          fi
+                        fi
+                      done
+                    fi
+                  done
+                  
+                  # Also create a backup copy in assets for runtime extraction if needed
+                  echo "Creating backup library copies in assets..."
+                  mkdir -p app/src/main/assets/native_libs
+                  
+                  for arch_dir in opencv/src/main/jniLibs/*/; do
+                    if [ -d "$arch_dir" ]; then
+                      arch_name=$(basename "$arch_dir")
+                      mkdir -p "app/src/main/assets/native_libs/$arch_name"
+                      
+                      for lib_file in "$arch_dir"/*.so; do
+                        if [ -f "$lib_file" ]; then
+                          lib_name=$(basename "$lib_file")
+                          cp "$lib_file" "app/src/main/assets/native_libs/$arch_name/"
+                          echo "✅ Backup copy of $lib_name created in assets for $arch_name"
                         fi
                       done
                     fi

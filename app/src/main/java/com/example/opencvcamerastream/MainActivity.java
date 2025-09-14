@@ -1385,6 +1385,32 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
                     Log.d(TAG, "✅ Manually loaded libc++_shared.so");
                 } catch (UnsatisfiedLinkError e) {
                     Log.w(TAG, "❌ Failed to manually load libc++_shared.so: " + e.getMessage());
+                    Log.w(TAG, "This confirms libc++_shared.so is NOT included in the APK");
+                    
+                    // Try alternative library names
+                    String[] alternativeNames = {"c++_shared", "stdc++", "gnustl_shared"};
+                    boolean loaded = false;
+                    for (String altName : alternativeNames) {
+                        try {
+                            System.loadLibrary(altName);
+                            Log.d(TAG, "✅ Successfully loaded alternative library: " + altName);
+                            loaded = true;
+                            break;
+                        } catch (UnsatisfiedLinkError altE) {
+                            Log.d(TAG, "Alternative " + altName + " also failed: " + altE.getMessage());
+                        }
+                    }
+                    
+                    if (!loaded) {
+                        Log.e(TAG, "❌ No C++ standard library could be loaded - trying asset extraction");
+                        
+                        // Try to extract and load from assets as last resort
+                        if (extractAndLoadLibraryFromAssets("libc++_shared.so")) {
+                            Log.i(TAG, "✅ Successfully extracted and loaded libc++_shared.so from assets");
+                        } else {
+                            Log.e(TAG, "❌ Asset extraction also failed - OpenCV will definitely fail");
+                        }
+                    }
                 }
                 
                 // Try to load OpenCV library directly
@@ -1593,6 +1619,71 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             } catch (UnsatisfiedLinkError e) {
                 Log.w(TAG, "❌ Library " + libName + " is NOT available: " + e.getMessage());
             }
+        }
+    }
+    
+    /**
+     * Extract and load a native library from assets as a fallback
+     */
+    private boolean extractAndLoadLibraryFromAssets(String libraryFileName) {
+        try {
+            Log.d(TAG, "Attempting to extract " + libraryFileName + " from assets");
+            
+            // Determine the correct architecture
+            String arch = System.getProperty("os.arch");
+            String abiDir;
+            if (arch != null && arch.contains("aarch64")) {
+                abiDir = "arm64-v8a";
+            } else if (arch != null && arch.contains("arm")) {
+                abiDir = "armeabi-v7a";
+            } else if (arch != null && arch.contains("x86_64")) {
+                abiDir = "x86_64";
+            } else {
+                abiDir = "x86";
+            }
+            
+            String assetPath = "native_libs/" + abiDir + "/" + libraryFileName;
+            Log.d(TAG, "Looking for asset: " + assetPath);
+            
+            // Check if the asset exists
+            try {
+                java.io.InputStream inputStream = getAssets().open(assetPath);
+                inputStream.close();
+                Log.d(TAG, "✅ Found " + libraryFileName + " in assets");
+            } catch (java.io.IOException e) {
+                Log.w(TAG, "❌ " + libraryFileName + " not found in assets: " + e.getMessage());
+                return false;
+            }
+            
+            // Extract to internal storage
+            java.io.File internalDir = new java.io.File(getFilesDir(), "native_libs");
+            if (!internalDir.exists()) {
+                internalDir.mkdirs();
+            }
+            
+            java.io.File extractedLib = new java.io.File(internalDir, libraryFileName);
+            
+            // Extract the library
+            try (java.io.InputStream inputStream = getAssets().open(assetPath);
+                 java.io.FileOutputStream outputStream = new java.io.FileOutputStream(extractedLib)) {
+                
+                byte[] buffer = new byte[8192];
+                int bytesRead;
+                while ((bytesRead = inputStream.read(buffer)) != -1) {
+                    outputStream.write(buffer, 0, bytesRead);
+                }
+                
+                Log.d(TAG, "✅ Extracted " + libraryFileName + " to " + extractedLib.getAbsolutePath());
+            }
+            
+            // Try to load the extracted library
+            System.load(extractedLib.getAbsolutePath());
+            Log.d(TAG, "✅ Successfully loaded " + libraryFileName + " from extracted file");
+            return true;
+            
+        } catch (Exception e) {
+            Log.e(TAG, "❌ Failed to extract and load " + libraryFileName + " from assets: " + e.getMessage());
+            return false;
         }
     }
 }
