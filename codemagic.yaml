@@ -666,6 +666,13 @@ workflows:
           # Force a clean to ensure libraries are properly included
           echo "Performing clean build to ensure library inclusion..."
           $GRADLE_EXECUTABLE clean
+          
+          # Verify libraries exist before building
+          echo "Final verification before build:"
+          echo "OpenCV module libraries:"
+          find opencv/src/main/jniLibs -name "*.so" 2>/dev/null | head -10
+          echo "App module libraries:"
+          find app/src/main/jniLibs -name "*.so" 2>/dev/null | head -10
       
       - name: Verify OpenCV libraries in APK
         script: |

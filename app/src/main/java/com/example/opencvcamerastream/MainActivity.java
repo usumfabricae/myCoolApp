@@ -1551,4 +1551,48 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             Log.d(TAG, "This may cause OpenCV loading to fail");
         }
     }
+    
+    /**
+     * Diagnose what native libraries are available in the APK
+     */
+    private void diagnoseAvailableLibraries() {
+        Log.d(TAG, "=== DIAGNOSING AVAILABLE NATIVE LIBRARIES ===");
+        
+        // Get the application's native library directory
+        String nativeLibraryDir = getApplicationInfo().nativeLibraryDir;
+        Log.d(TAG, "Native library directory: " + nativeLibraryDir);
+        
+        // Try to list what's actually available
+        try {
+            java.io.File libDir = new java.io.File(nativeLibraryDir);
+            if (libDir.exists() && libDir.isDirectory()) {
+                java.io.File[] files = libDir.listFiles();
+                if (files != null) {
+                    Log.d(TAG, "Available native libraries in APK:");
+                    for (java.io.File file : files) {
+                        if (file.getName().endsWith(".so")) {
+                            Log.d(TAG, "  - " + file.getName() + " (" + file.length() + " bytes)");
+                        }
+                    }
+                } else {
+                    Log.w(TAG, "No files found in native library directory");
+                }
+            } else {
+                Log.w(TAG, "Native library directory does not exist or is not a directory");
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to list native libraries: " + e.getMessage());
+        }
+        
+        // Test specific libraries we expect
+        String[] expectedLibraries = {"c++_shared", "opencv_java4", "opencv_java3"};
+        for (String libName : expectedLibraries) {
+            try {
+                System.loadLibrary(libName);
+                Log.d(TAG, "✅ Library " + libName + " is available and loadable");
+            } catch (UnsatisfiedLinkError e) {
+                Log.w(TAG, "❌ Library " + libName + " is NOT available: " + e.getMessage());
+            }
+        }
+    }
 }
