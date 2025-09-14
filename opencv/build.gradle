@@ -32,30 +32,13 @@ android {
     }
     
     packagingOptions {
+        pickFirst '**/libc++_shared.so'
         pickFirst '**/libopencv_java4.so'
         pickFirst '**/libopencv_java3.so'
         
-        // Exclude libc++_shared.so to force static linking
-        exclude '**/libc++_shared.so'
-    }
-    
-    defaultConfig {
-        minSdk 21
-        targetSdk 34
-
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        consumerProguardFiles "consumer-rules.pro"
-        
-        ndk {
-            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
-        }
-        
-        // Configure to use static C++ standard library
-        externalNativeBuild {
-            cmake {
-                arguments "-DANDROID_STL=c++_static"
-            }
-        }
+        // Ensure native libraries are not stripped
+        doNotStrip '**/libc++_shared.so'
+        doNotStrip '**/libopencv_java4.so'
     }
     
     lint {

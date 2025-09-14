@@ -440,9 +440,92 @@ workflows:
                   exit 1
                 fi
                 
-                # Skip libc++_shared.so validation - using static linking approach
-                echo "ℹ️  Using static C++ standard library linking (ANDROID_STL=c++_static)"
-                echo "This eliminates the need for libc++_shared.so and prevents corruption issues"
+                # Add libc++_shared.so from Android NDK with proper validation
+                echo "Adding libc++_shared.so from Android NDK (OpenCV requires dynamic linking)..."
+                
+                FOUND_ANY_LIBC=false
+                
+                # Try to find libc++_shared.so in NDK with proper validation
+                if [ -n "$ANDROID_NDK_ROOT" ] && [ -d "$ANDROID_NDK_ROOT" ]; then
+                  echo "Android NDK found at: $ANDROID_NDK_ROOT"
+                  
+                  for arch_dir in opencv/src/main/jniLibs/*/; do
+                    if [ -d "$arch_dir" ]; then
+                      arch_name=$(basename "$arch_dir")
+                      echo "Processing architecture: $arch_name"
+                      
+                      # Define NDK paths for each architecture
+                      case "$arch_name" in
+                        "arm64-v8a")
+                          NDK_PATHS=(
+                            "$ANDROID_NDK_ROOT/sources/cxx-stl/llvm-libc++/libs/$arch_name/libc++_shared.so"
+                            "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
+                          )
+                          ;;
+                        "armeabi-v7a")
+                          NDK_PATHS=(
+                            "$ANDROID_NDK_ROOT/sources/cxx-stl/llvm-libc++/libs/$arch_name/libc++_shared.so"
+                            "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/arm-linux-androideabi/libc++_shared.so"
+                          )
+                          ;;
+                        "x86")
+                          NDK_PATHS=(
+                            "$ANDROID_NDK_ROOT/sources/cxx-stl/llvm-libc++/libs/$arch_name/libc++_shared.so"
+                            "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/i686-linux-android/libc++_shared.so"
+                          )
+                          ;;
+                        "x86_64")
+                          NDK_PATHS=(
+                            "$ANDROID_NDK_ROOT/sources/cxx-stl/llvm-libc++/libs/$arch_name/libc++_shared.so"
+                            "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/x86_64-linux-android/libc++_shared.so"
+                          )
+                          ;;
+                        *)
+                          echo "⚠️  Unknown architecture: $arch_name, skipping"
+                          continue
+                          ;;
+                      esac
+                      
+                      # Try each NDK path and validate the binary
+                      FOUND_FOR_ARCH=false
+                      for ndk_path in "${NDK_PATHS[@]}"; do
+                        if [ -f "$ndk_path" ]; then
+                          # Validate that it's a proper ELF binary
+                          if file "$ndk_path" | grep -q "ELF.*shared object"; then
+                            cp "$ndk_path" "$arch_dir/libc++_shared.so"
+                            
+                            # Verify the copied file is also valid
+                            if file "$arch_dir/libc++_shared.so" | grep -q "ELF.*shared object"; then
+                              echo "✅ Added valid libc++_shared.so for $arch_name from $ndk_path"
+                              FOUND_FOR_ARCH=true
+                              FOUND_ANY_LIBC=true
+                              break
+                            else
+                              echo "❌ Copied file is not valid ELF binary for $arch_name"
+                              rm -f "$arch_dir/libc++_shared.so"
+                            fi
+                          else
+                            echo "⚠️  File at $ndk_path is not a valid ELF binary"
+                          fi
+                        fi
+                      done
+                      
+                      if [ "$FOUND_FOR_ARCH" = false ]; then
+                        echo "⚠️  Could not find valid libc++_shared.so for $arch_name in NDK"
+                      fi
+                    fi
+                  done
+                else
+                  echo "⚠️  Android NDK not found or ANDROID_NDK_ROOT not set"
+                fi
+                
+                # Validate that we found at least some libc++_shared.so files
+                if [ "$FOUND_ANY_LIBC" = true ]; then
+                  echo "✅ Successfully added libc++_shared.so from NDK"
+                else
+                  echo "⚠️  Could not add libc++_shared.so from NDK"
+                  echo "OpenCV may fail to load without this library"
+                fi
                 
                 # Show library distribution by architecture
                 echo "Library distribution by architecture:"
@@ -548,11 +631,21 @@ workflows:
             if [ "$OPENCV_LIBS_IN_APK" -gt 0 ]; then
               echo "✅ OpenCV core libraries are included in APK"
               
-              if [ "$LIBC_SHARED_IN_APK" -eq 0 ]; then
-                echo "✅ libc++_shared.so correctly excluded from APK (using static linking)"
+              if [ "$LIBC_SHARED_IN_APK" -gt 0 ]; then
+                echo "✅ libc++_shared.so is included in APK (required by OpenCV)"
+                
+                # Validate that the included libc++_shared.so files are valid ELF binaries
+                echo "Validating libc++_shared.so files in APK..."
+                find "$TEMP_APK_DIR" -name "libc++_shared.so" | while read lib_file; do
+                  if file "$lib_file" | grep -q "ELF.*shared object"; then
+                    echo "✅ Valid ELF binary: $(echo "$lib_file" | sed "s|$TEMP_APK_DIR/||")"
+                  else
+                    echo "❌ Invalid binary: $(echo "$lib_file" | sed "s|$TEMP_APK_DIR/||")"
+                  fi
+                done
               else
-                echo "⚠️  libc++_shared.so found in APK - this may cause corruption issues"
-                echo "Static linking configuration should exclude this library"
+                echo "❌ libc++_shared.so missing from APK - OpenCV will fail to load"
+                exit 1
               fi
               
               # Show library distribution in APK

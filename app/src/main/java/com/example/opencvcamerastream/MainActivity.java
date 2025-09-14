@@ -1359,11 +1359,11 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
     }
     
     /**
-     * Initialize OpenCV with static C++ standard library linking
-     * This method uses statically linked OpenCV libraries to avoid libc++_shared.so dependency issues
+     * Initialize OpenCV with proper libc++_shared.so handling
+     * This method ensures OpenCV can find the required dynamic C++ standard library
      */
     private void initializeOpenCVWithSystemLibraries() {
-        Log.d(TAG, "Initializing OpenCV with static C++ standard library linking");
+        Log.d(TAG, "Initializing OpenCV with dynamic C++ standard library linking");
         
         try {
             // Log library environment for debugging
@@ -1460,13 +1460,14 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
 
     
     /**
-     * Pre-load system libraries that OpenCV depends on (excluding libc++_shared - using static linking)
+     * Pre-load system libraries that OpenCV depends on
      */
     private void preloadSystemLibraries() {
-        Log.d(TAG, "Pre-loading system libraries (libc++_shared statically linked)");
+        Log.d(TAG, "Pre-loading system libraries for OpenCV");
         
-        // List of libraries to try pre-loading (excluding libc++_shared)
+        // List of libraries to try pre-loading
         String[] systemLibraries = {
+            "c++_shared",  // libc++_shared.so (required by OpenCV)
             "log",         // liblog.so (Android logging)
             "z",           // libz.so (compression)
             "dl"           // libdl.so (dynamic loading)

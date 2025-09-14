@@ -23,10 +23,10 @@ android {
             abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
         }
         
-        // Configure native library loading to use static C++ standard library
+        // Configure native library loading to use shared C++ standard library (required by OpenCV)
         externalNativeBuild {
             cmake {
-                arguments "-DANDROID_STL=c++_static"
+                arguments "-DANDROID_STL=c++_shared"
             }
         }
     }
@@ -49,14 +49,13 @@ android {
     
     // Android 10 scoped storage compliance
     packagingOptions {
+        pickFirst '**/libc++_shared.so'
         pickFirst '**/libjsc.so'
         pickFirst '**/libopencv_java4.so'
         pickFirst '**/libopencv_java3.so'
         
-        // Exclude corrupted libc++_shared.so - use static linking instead
-        exclude '**/libc++_shared.so'
-        
         // Ensure native libraries are not stripped
+        doNotStrip '**/libc++_shared.so'
         doNotStrip '**/libopencv_java4.so'
     }
     
