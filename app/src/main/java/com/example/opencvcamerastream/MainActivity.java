@@ -1359,19 +1359,15 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
     }
     
     /**
-     * Initialize OpenCV with system library pre-loading to handle libc++_shared.so dependency
-     * This method addresses the common issue where OpenCV can't find libc++_shared.so
-     * even when it's available on the system at /lib/libc++_shared.so
+     * Initialize OpenCV with static C++ standard library linking
+     * This method uses statically linked OpenCV libraries to avoid libc++_shared.so dependency issues
      */
     private void initializeOpenCVWithSystemLibraries() {
-        Log.d(TAG, "Initializing OpenCV with system library pre-loading");
+        Log.d(TAG, "Initializing OpenCV with static C++ standard library linking");
         
         try {
             // Log library environment for debugging
             logLibraryEnvironment();
-            
-            // Pre-load system libraries that OpenCV depends on
-            preloadSystemLibraries();
             
             // Now try OpenCV initialization with better error handling
             boolean openCVInitialized = false;
@@ -1464,14 +1460,13 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
 
     
     /**
-     * Pre-load system libraries that OpenCV depends on
+     * Pre-load system libraries that OpenCV depends on (excluding libc++_shared - using static linking)
      */
     private void preloadSystemLibraries() {
-        Log.d(TAG, "Attempting to pre-load system libraries");
+        Log.d(TAG, "Pre-loading system libraries (libc++_shared statically linked)");
         
-        // List of libraries to try pre-loading
+        // List of libraries to try pre-loading (excluding libc++_shared)
         String[] systemLibraries = {
-            "c++_shared",  // libc++_shared.so
             "log",         // liblog.so (Android logging)
             "z",           // libz.so (compression)
             "dl"           // libdl.so (dynamic loading)
@@ -1494,14 +1489,10 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
      */
     private void logLibraryEnvironment() {
         Log.d(TAG, "=== NATIVE LIBRARY ENVIRONMENT ===");
+        Log.d(TAG, "Using static C++ standard library linking (ANDROID_STL=c++_static)");
         Log.d(TAG, "java.library.path: " + System.getProperty("java.library.path"));
         
-        // Test if we can access the system libc++_shared.so
-        try {
-            System.loadLibrary("c++_shared");
-            Log.d(TAG, "System libc++_shared.so: AVAILABLE");
-        } catch (UnsatisfiedLinkError e) {
-            Log.d(TAG, "System libc++_shared.so: NOT AVAILABLE - " + e.getMessage());
-        }
+        // Note: Not testing libc++_shared.so since we're using static linking
+        Log.d(TAG, "libc++_shared.so: STATICALLY LINKED (not required as separate library)");
     }
 }

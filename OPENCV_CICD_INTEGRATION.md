@@ -167,14 +167,25 @@ Libraries are included for all Android architectures:
 - Check OpenCV setup step in build logs
 - Ensure APK downloaded from CI/CD artifacts
 
-#### Issue: "library libc++_shared.so not found"
-**Solution**: Missing C++ standard library
-- The CI/CD pipeline automatically adds `libc++_shared.so` from Android NDK
-- If not available, the app uses system `libc++_shared.so` at runtime
-- Verify `packagingOptions` and `ndk` configuration in build.gradle
-- Check native library inclusion in CI/CD logs
+#### Issue: "library libc++_shared.so not found" or "bad ELF magic"
+**Solution**: Static C++ standard library linking
+- The build is configured to use `ANDROID_STL=c++_static`
+- This statically links the C++ standard library into `libopencv_java4.so`
+- Eliminates the need for separate `libc++_shared.so` file
+- Prevents corruption issues with downloaded/copied library files
 
-**Note**: `libc++_shared.so` is part of Android NDK, not OpenCV SDK. The CI/CD pipeline handles this automatically.
+**Configuration**:
+```gradle
+externalNativeBuild {
+    cmake {
+        arguments "-DANDROID_STL=c++_static"
+    }
+}
+
+packagingOptions {
+    exclude '**/libc++_shared.so'  // Force static linking
+}
+```
 
 ## Local Development
 
