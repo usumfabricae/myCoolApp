@@ -25,6 +25,18 @@ android {
         targetCompatibility JavaVersion.VERSION_1_8
     }
     
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ['src/main/jniLibs']
+        }
+    }
+    
+    packagingOptions {
+        pickFirst '**/libc++_shared.so'
+        pickFirst '**/libopencv_java4.so'
+        pickFirst '**/libopencv_java3.so'
+    }
+    
     lint {
         // Disable lint abort on error for CI/CD
         abortOnError false

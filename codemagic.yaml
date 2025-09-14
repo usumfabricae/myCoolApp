@@ -341,11 +341,43 @@ workflows:
             chmod +x scripts/setup-opencv.sh
             echo "✅ Found OpenCV setup script"
             
-            # Run the setup script
+            # Run the setup script with enhanced error reporting
             if ./scripts/setup-opencv.sh; then
               echo "✅ OpenCV setup script completed successfully"
+              
+              # Immediate verification of setup results
+              echo "Verifying OpenCV setup results..."
+              JAVA_FILES=$(find opencv/src/main/java -name "*.java" | wc -l)
+              NATIVE_LIBS=$(find opencv/src/main/jniLibs -name "*.so" | wc -l)
+              
+              echo "Java files installed: $JAVA_FILES"
+              echo "Native libraries installed: $NATIVE_LIBS"
+              
+              if [ "$JAVA_FILES" -eq 0 ] || [ "$NATIVE_LIBS" -eq 0 ]; then
+                echo "❌ OpenCV setup incomplete - missing files"
+                echo "Java directory contents:"
+                find opencv/src/main/java -type f | head -5
+                echo "Native libs directory contents:"
+                find opencv/src/main/jniLibs -type f | head -5
+                exit 1
+              fi
+              
+              # Verify specific required files
+              if [ ! -f "opencv/src/main/java/org/opencv/core/Mat.java" ]; then
+                echo "❌ Critical OpenCV class Mat.java not found"
+                exit 1
+              fi
+              
+              if ! find opencv/src/main/jniLibs -name "libopencv_java4.so" | grep -q .; then
+                echo "❌ Critical native library libopencv_java4.so not found"
+                exit 1
+              fi
+              
+              echo "✅ OpenCV setup verification passed"
             else
               echo "❌ OpenCV setup script failed"
+              echo "Checking for partial setup..."
+              ls -la opencv/src/main/ || echo "OpenCV main directory not accessible"
               exit 1
             fi
           else
@@ -396,6 +428,34 @@ workflows:
               echo "Native libraries found: $NATIVE_LIBS_COUNT"
               if [ "$NATIVE_LIBS_COUNT" -gt 0 ]; then
                 echo "✅ OpenCV native libraries are present"
+                
+                # Validate specific required libraries
+                echo "Validating required OpenCV libraries..."
+                REQUIRED_LIBS=("libopencv_java4.so" "libc++_shared.so")
+                for lib in "${REQUIRED_LIBS[@]}"; do
+                  if find opencv/src/main/jniLibs -name "$lib" | grep -q .; then
+                    echo "✅ Required library found: $lib"
+                  else
+                    echo "❌ Missing required library: $lib"
+                    exit 1
+                  fi
+                done
+                
+                # Show library distribution by architecture
+                echo "Library distribution by architecture:"
+                for arch_dir in opencv/src/main/jniLibs/*/; do
+                  if [ -d "$arch_dir" ]; then
+                    arch_name=$(basename "$arch_dir")
+                    arch_lib_count=$(find "$arch_dir" -name "*.so" | wc -l)
+                    echo "  $arch_name: $arch_lib_count libraries"
+                    
+                    # Verify key libraries exist for each architecture
+                    if [ "$arch_lib_count" -eq 0 ]; then
+                      echo "    ❌ No libraries found for $arch_name"
+                      exit 1
+                    fi
+                  fi
+                done
               else
                 echo "❌ No OpenCV native libraries found"
                 exit 1
@@ -442,6 +502,70 @@ workflows:
           fi
           
           echo "✅ OpenCV integration validation completed successfully"
+      
+      - name: Verify OpenCV libraries in APK
+        script: |
+          source $CM_BUILD_DIR/android_env.sh
+          cd "$ANDROID_PROJECT_DIR"
+          
+          echo "=== VERIFYING OPENCV LIBRARIES IN APK ==="
+          
+          # Build a test APK first to verify library inclusion
+          echo "Building test APK to verify OpenCV library inclusion..."
+          if ! $GRADLE_EXECUTABLE assembleDebug --stacktrace; then
+            echo "❌ Failed to build test APK for verification"
+            exit 1
+          fi
+          
+          # Find the built APK
+          APK_PATH=$(find . -name "app-debug.apk" -type f | head -1)
+          if [ -z "$APK_PATH" ]; then
+            echo "❌ Could not find built APK for verification"
+            exit 1
+          fi
+          
+          echo "✅ Found APK: $APK_PATH"
+          
+          # Extract APK to verify contents
+          TEMP_APK_DIR="temp-apk-verification"
+          mkdir -p "$TEMP_APK_DIR"
+          
+          # Use unzip to extract APK contents
+          if unzip -q "$APK_PATH" -d "$TEMP_APK_DIR"; then
+            echo "✅ APK extracted for verification"
+            
+            # Check for OpenCV native libraries in APK
+            echo "Checking for OpenCV libraries in APK..."
+            OPENCV_LIBS_IN_APK=$(find "$TEMP_APK_DIR" -name "libopencv_java4.so" | wc -l)
+            LIBC_SHARED_IN_APK=$(find "$TEMP_APK_DIR" -name "libc++_shared.so" | wc -l)
+            
+            echo "OpenCV libraries found in APK: $OPENCV_LIBS_IN_APK"
+            echo "libc++_shared.so found in APK: $LIBC_SHARED_IN_APK"
+            
+            if [ "$OPENCV_LIBS_IN_APK" -gt 0 ] && [ "$LIBC_SHARED_IN_APK" -gt 0 ]; then
+              echo "✅ Required OpenCV libraries are included in APK"
+              
+              # Show library distribution in APK
+              echo "Library distribution in APK:"
+              find "$TEMP_APK_DIR" -name "*.so" | while read lib; do
+                lib_path=$(echo "$lib" | sed "s|$TEMP_APK_DIR/||")
+                echo "  $lib_path"
+              done | head -10
+            else
+              echo "❌ Required OpenCV libraries missing from APK"
+              echo "APK lib directory contents:"
+              find "$TEMP_APK_DIR" -path "*/lib/*" -type f | head -10
+              exit 1
+            fi
+            
+            # Clean up
+            rm -rf "$TEMP_APK_DIR"
+          else
+            echo "❌ Failed to extract APK for verification"
+            exit 1
+          fi
+          
+          echo "✅ OpenCV library verification in APK completed successfully"
       
       - name: Build debug APK with Android 10 validation
         script: |
