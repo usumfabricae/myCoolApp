@@ -1369,23 +1369,60 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             // Log library environment for debugging
             logLibraryEnvironment();
             
-            // Now try OpenCV initialization with better error handling
+            // Diagnose available libraries
+            diagnoseAvailableLibraries();
+            
+            // Explicitly try to load OpenCV libraries in correct order
             boolean openCVInitialized = false;
             
+            // First, try to manually load the OpenCV library with dependencies
             try {
-                // Try static initialization first (uses bundled libraries)
-                if (OpenCVLoader.initDebug()) {
-                    Log.d(TAG, "OpenCV initialized successfully with static loading");
-                    openCVInitialized = true;
-                    handleOpenCVInitializationSuccess();
-                } else {
-                    Log.d(TAG, "Static OpenCV initialization failed, trying async initialization");
+                Log.d(TAG, "Attempting manual OpenCV library loading...");
+                
+                // Try to load libc++_shared.so first
+                try {
+                    System.loadLibrary("c++_shared");
+                    Log.d(TAG, "✅ Manually loaded libc++_shared.so");
+                } catch (UnsatisfiedLinkError e) {
+                    Log.w(TAG, "❌ Failed to manually load libc++_shared.so: " + e.getMessage());
                 }
-            } catch (UnsatisfiedLinkError e) {
-                Log.w(TAG, "Static OpenCV initialization failed with UnsatisfiedLinkError: " + e.getMessage());
-                Log.i(TAG, "This is expected if libc++_shared.so is not bundled with the app");
+                
+                // Try to load OpenCV library directly
+                try {
+                    System.loadLibrary("opencv_java4");
+                    Log.d(TAG, "✅ Manually loaded libopencv_java4.so");
+                    
+                    // If manual loading succeeded, try OpenCV initialization
+                    if (OpenCVLoader.initDebug()) {
+                        Log.d(TAG, "OpenCV initialized successfully after manual library loading");
+                        openCVInitialized = true;
+                        handleOpenCVInitializationSuccess();
+                    }
+                } catch (UnsatisfiedLinkError e) {
+                    Log.w(TAG, "❌ Failed to manually load libopencv_java4.so: " + e.getMessage());
+                }
+                
             } catch (Exception e) {
-                Log.w(TAG, "Static OpenCV initialization failed with exception: " + e.getMessage());
+                Log.w(TAG, "Manual library loading failed: " + e.getMessage());
+            }
+            
+            // If manual loading didn't work, try standard OpenCV initialization
+            if (!openCVInitialized) {
+                try {
+                    // Try static initialization first (uses bundled libraries)
+                    if (OpenCVLoader.initDebug()) {
+                        Log.d(TAG, "OpenCV initialized successfully with static loading");
+                        openCVInitialized = true;
+                        handleOpenCVInitializationSuccess();
+                    } else {
+                        Log.d(TAG, "Static OpenCV initialization failed, trying async initialization");
+                    }
+                } catch (UnsatisfiedLinkError e) {
+                    Log.w(TAG, "Static OpenCV initialization failed with UnsatisfiedLinkError: " + e.getMessage());
+                    Log.i(TAG, "This suggests the OpenCV libraries are not properly included in the APK");
+                } catch (Exception e) {
+                    Log.w(TAG, "Static OpenCV initialization failed with exception: " + e.getMessage());
+                }
             }
             
             // If static initialization failed, try async initialization (uses OpenCV Manager)
