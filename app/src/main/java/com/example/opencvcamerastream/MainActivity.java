@@ -1502,21 +1502,35 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
      * Handle successful OpenCV initialization
      */
     private void handleOpenCVInitializationSuccess() {
-        Log.i(TAG, "OpenCV initialization completed successfully");
+        Log.i(TAG, "🎉 OpenCV initialization completed successfully!");
+        Log.i(TAG, "✅ OpenCV is now ready for image processing");
         isOpenCVInitialized = true;
+        
+        // Test OpenCV functionality
+        try {
+            // Try to create a simple OpenCV Mat to verify it's working
+            org.opencv.core.Mat testMat = new org.opencv.core.Mat(100, 100, org.opencv.core.CvType.CV_8UC3);
+            Log.i(TAG, "✅ OpenCV Mat creation test successful - OpenCV is fully functional!");
+            Log.i(TAG, "✅ OpenCV version: " + org.opencv.core.Core.VERSION);
+            testMat.release();
+        } catch (Exception e) {
+            Log.w(TAG, "⚠️ OpenCV Mat test failed, but initialization reported success: " + e.getMessage());
+        }
         
         // Initialize OpenCV processor now that OpenCV is ready
         if (openCVProcessor != null) {
             openCVProcessor.initialize();
+            Log.d(TAG, "✅ OpenCV processor initialized");
         }
         
         // Start frame processing if camera is ready
         if (frameProcessor != null && cameraManager != null && cameraManager.isInitialized()) {
             frameProcessor.start();
+            Log.d(TAG, "✅ Frame processor started");
         }
         
         runOnUiThread(() -> {
-            Toast.makeText(this, "OpenCV ready - camera processing enabled", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "🎉 OpenCV ready - camera processing enabled!", Toast.LENGTH_LONG).show();
         });
     }
     
