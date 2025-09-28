@@ -289,25 +289,44 @@ public class CameraManager {
         }
         
         try {
-            // Close capture session
-            if (captureSession != null) {
-                captureSession.close();
-                captureSession = null;
+            // Acquire lock to prevent concurrent operations
+            if (!cameraOpenCloseLock.tryAcquire(2500, TimeUnit.MILLISECONDS)) {
+                Log.w(TAG, "Timeout waiting to lock camera for stopping preview");
+                return;
             }
             
-            // Close camera device
-            if (cameraDevice != null) {
-                cameraDevice.close();
-                cameraDevice = null;
+            try {
+                // Stop repeating requests first
+                if (captureSession != null) {
+                    try {
+                        captureSession.stopRepeating();
+                        captureSession.abortCaptures();
+                    } catch (CameraAccessException e) {
+                        Log.w(TAG, "Error stopping capture session", e);
+                    }
+                    captureSession.close();
+                    captureSession = null;
+                }
+                
+                // Close camera device
+                if (cameraDevice != null) {
+                    cameraDevice.close();
+                    cameraDevice = null;
+                }
+                
+                isPreviewActive = false;
+                Log.d(TAG, "Camera preview stopped");
+                
+                if (cameraCallback != null) {
+                    cameraCallback.onCameraClosed();
+                }
+            } finally {
+                cameraOpenCloseLock.release();
             }
             
-            isPreviewActive = false;
-            Log.d(TAG, "Camera preview stopped");
-            
-            if (cameraCallback != null) {
-                cameraCallback.onCameraClosed();
-            }
-            
+        } catch (InterruptedException e) {
+            Log.e(TAG, "Interrupted while stopping camera preview", e);
+            Thread.currentThread().interrupt();
         } catch (Exception e) {
             Log.e(TAG, "Error stopping camera preview", e);
         }
@@ -379,53 +398,63 @@ public class CameraManager {
             return;
         }
         
+        // Check if background handler is still available
+        if (backgroundHandler == null) {
+            Log.w(TAG, "Background handler not available for reconnection");
+            return;
+        }
+        
         reconnectionAttempts++;
         lastReconnectionTime = currentTime;
         
         Log.i(TAG, "Attempting camera reconnection, attempt " + reconnectionAttempts);
         
         // Run reconnection on background thread
-        if (backgroundHandler != null) {
-            backgroundHandler.post(() -> {
-                try {
-                    // Stop current preview if active
-                    if (isPreviewActive) {
-                        stopPreview();
-                    }
+        backgroundHandler.post(() -> {
+            try {
+                // Ensure we have a valid background handler
+                if (backgroundHandler == null) {
+                    Log.w(TAG, "Background handler became null during reconnection");
+                    return;
+                }
+                
+                // Stop current preview if active
+                if (isPreviewActive) {
+                    stopPreview();
+                }
+                
+                // Wait a moment before reconnecting
+                Thread.sleep(1000);
+                
+                // Attempt to restart
+                if (startPreview()) {
+                    Log.i(TAG, "Camera reconnection successful after " + reconnectionAttempts + " attempts");
+                    reconnectionAttempts = 0; // Reset counter on success
                     
-                    // Wait a moment before reconnecting
-                    Thread.sleep(500);
-                    
-                    // Attempt to restart
-                    if (startPreview()) {
-                        Log.i(TAG, "Camera reconnection successful after " + reconnectionAttempts + " attempts");
-                        reconnectionAttempts = 0; // Reset counter on success
-                        
-                        if (errorHandler != null) {
-                            errorHandler.resetErrorCounters();
-                        }
-                    } else {
-                        Log.w(TAG, "Camera reconnection attempt " + reconnectionAttempts + " failed");
-                        
-                        // Schedule next attempt with exponential backoff
-                        if (reconnectionAttempts < MAX_RECONNECTION_ATTEMPTS) {
-                            long nextDelay = RECONNECTION_DELAY_MS * (1L << (reconnectionAttempts - 1));
-                            Log.d(TAG, "Scheduling next reconnection attempt in " + nextDelay + "ms");
-                            
-                            backgroundHandler.postDelayed(this::attemptReconnection, nextDelay);
-                        }
-                    }
-                } catch (InterruptedException e) {
-                    Log.w(TAG, "Reconnection attempt interrupted", e);
-                    Thread.currentThread().interrupt();
-                } catch (Exception e) {
-                    Log.e(TAG, "Error during reconnection attempt", e);
                     if (errorHandler != null) {
-                        errorHandler.handleSystemError(e, "camera reconnection");
+                        errorHandler.resetErrorCounters();
+                    }
+                } else {
+                    Log.w(TAG, "Camera reconnection attempt " + reconnectionAttempts + " failed");
+                    
+                    // Schedule next attempt with exponential backoff
+                    if (reconnectionAttempts < MAX_RECONNECTION_ATTEMPTS && backgroundHandler != null) {
+                        long nextDelay = RECONNECTION_DELAY_MS * (1L << (reconnectionAttempts - 1));
+                        Log.d(TAG, "Scheduling next reconnection attempt in " + nextDelay + "ms");
+                        
+                        backgroundHandler.postDelayed(this::attemptReconnection, nextDelay);
                     }
                 }
-            });
-        }
+            } catch (InterruptedException e) {
+                Log.w(TAG, "Reconnection attempt interrupted", e);
+                Thread.currentThread().interrupt();
+            } catch (Exception e) {
+                Log.e(TAG, "Error during reconnection attempt", e);
+                if (errorHandler != null) {
+                    errorHandler.handleSystemError(e, "camera reconnection");
+                }
+            }
+        });
     }
     
     /**
@@ -625,6 +654,7 @@ public class CameraManager {
                 Log.d(TAG, "Background thread stopped");
             } catch (InterruptedException e) {
                 Log.e(TAG, "Error stopping background thread", e);
+                Thread.currentThread().interrupt(); // Restore interrupted status
             }
         }
     }
@@ -654,26 +684,50 @@ public class CameraManager {
         @Override
         public void onDisconnected(@NonNull CameraDevice camera) {
             Log.w(TAG, "Camera device disconnected");
-            cameraOpenCloseLock.release();
-            camera.close();
-            cameraDevice = null;
-            isPreviewActive = false;
+            
+            // Clean up resources safely
+            try {
+                if (captureSession != null) {
+                    captureSession.close();
+                    captureSession = null;
+                }
+                camera.close();
+                cameraDevice = null;
+                isPreviewActive = false;
+            } catch (Exception e) {
+                Log.e(TAG, "Error cleaning up after camera disconnection", e);
+            } finally {
+                cameraOpenCloseLock.release();
+            }
             
             if (cameraCallback != null) {
                 cameraCallback.onCameraDisconnected();
             }
             
-            // Attempt automatic reconnection
-            attemptReconnection();
+            // Attempt automatic reconnection with delay to avoid immediate retry
+            if (backgroundHandler != null) {
+                backgroundHandler.postDelayed(() -> attemptReconnection(), 1000);
+            }
         }
         
         @Override
         public void onError(@NonNull CameraDevice camera, int error) {
             Log.e(TAG, "Camera device error: " + error);
-            cameraOpenCloseLock.release();
-            camera.close();
-            cameraDevice = null;
-            isPreviewActive = false;
+            
+            // Clean up resources safely
+            try {
+                if (captureSession != null) {
+                    captureSession.close();
+                    captureSession = null;
+                }
+                camera.close();
+                cameraDevice = null;
+                isPreviewActive = false;
+            } catch (Exception e) {
+                Log.e(TAG, "Error cleaning up after camera error", e);
+            } finally {
+                cameraOpenCloseLock.release();
+            }
             
             String errorMessage = getCameraErrorMessage(error);
             if (errorHandler != null) {
@@ -682,8 +736,8 @@ public class CameraManager {
             notifyCameraError(error, errorMessage);
             
             // Attempt automatic reconnection for recoverable errors
-            if (isRecoverableError(error)) {
-                attemptReconnection();
+            if (isRecoverableError(error) && backgroundHandler != null) {
+                backgroundHandler.postDelayed(() -> attemptReconnection(), 2000);
             }
         }
     };

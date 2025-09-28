@@ -701,7 +701,13 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             !cameraManager.isPreviewActive() && permissionHandler != null && 
             permissionHandler.isCameraPermissionGranted()) {
             Log.d(TAG, "Restarting camera preview on resume");
-            cameraManager.startPreview();
+            // Use a small delay to avoid race conditions with camera lifecycle
+            new android.os.Handler().postDelayed(() -> {
+                if (isAppInForeground && cameraManager != null && cameraManager.isInitialized() && 
+                    !cameraManager.isPreviewActive()) {
+                    cameraManager.startPreview();
+                }
+            }, 100);
         }
     }
     
@@ -879,22 +885,8 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         Log.d(TAG, "Attempting camera reconnection");
         
         if (cameraManager != null) {
-            // Release current resources
-            cameraManager.release();
-            
-            // Reinitialize
-            if (cameraManager.initializeCamera()) {
-                if (cameraManager.startPreview()) {
-                    Log.i(TAG, "Camera reconnected successfully");
-                    runOnUiThread(() -> {
-                        Toast.makeText(MainActivity.this, "Camera reconnected", Toast.LENGTH_SHORT).show();
-                    });
-                } else {
-                    Log.w(TAG, "Camera reconnection failed at preview start");
-                }
-            } else {
-                Log.w(TAG, "Camera reconnection failed at initialization");
-            }
+            // Use the camera manager's built-in reconnection logic instead of manual release/reinit
+            cameraManager.attemptReconnection();
         }
     }
     
