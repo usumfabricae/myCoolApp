@@ -125,10 +125,26 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
         }
         
         // Validate input Mat before processing
-        if (processedFrame == null || processedFrame.empty() || 
-            processedFrame.width() <= 0 || processedFrame.height() <= 0) {
-            Log.w(TAG, "Invalid processed frame - skipping display update");
+        if (processedFrame == null) {
+            Log.w(TAG, "Invalid processed frame - frame is null - skipping display update");
             return false;
+        }
+        
+        if (processedFrame.empty()) {
+            Log.w(TAG, "Invalid processed frame - frame is empty - skipping display update");
+            return false;
+        }
+        
+        if (processedFrame.width() <= 0 || processedFrame.height() <= 0) {
+            Log.w(TAG, "Invalid processed frame - invalid dimensions: " + 
+                  processedFrame.width() + "x" + processedFrame.height() + " - skipping display update");
+            return false;
+        }
+        
+        // Additional debugging for frame validation (only when needed)
+        if (Log.isLoggable(TAG, Log.VERBOSE)) {
+            Log.v(TAG, "Processing frame: " + processedFrame.width() + "x" + processedFrame.height() + 
+                  ", channels: " + processedFrame.channels() + ", type: " + processedFrame.type());
         }
         
         long startTime = System.currentTimeMillis();

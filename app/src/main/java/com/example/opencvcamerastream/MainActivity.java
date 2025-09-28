@@ -313,12 +313,15 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
                 // Display processed frame on UI thread
                 runOnUiThread(() -> {
                     if (displayManager != null && displayManager.isDisplayReady()) {
+                        // DisplayManager will handle the Mat internally and create its own copy if needed
                         displayManager.updateFrame(processedFrame);
                     }
+                    
+                    // Clean up resources AFTER display update
+                    processedFrame.release();
                 });
                 
-                // Clean up resources
-                processedFrame.release();
+                // Clean up original image immediately
                 originalImage.close();
             }
             
@@ -340,9 +343,10 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
                             if (displayManager != null && displayManager.isDisplayReady()) {
                                 displayManager.updateFrame(originalMat);
                             }
+                            // Clean up Mat AFTER display update
+                            originalMat.release();
                         });
                         
-                        originalMat.release();
                     } catch (Exception e) {
                         Log.e(TAG, "Failed to convert original image for display", e);
                     } finally {

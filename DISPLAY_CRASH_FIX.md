@@ -267,12 +267,29 @@ private Mat convertToGrayscale(@NonNull Mat inputFrame) {
 - **User Experience**: Smooth operation with occasional black frames instead of crashes
 
 ## Root Cause Identified and Fixed
-The primary cause of the crash was **single-channel grayscale Mat objects** being passed to `Utils.matToBitmap()`. The OpenCV native code expects multi-channel data that matches the bitmap configuration, but grayscale conversion creates single-channel Mats.
+The crash had two primary causes:
+1. **Single-channel grayscale Mat objects** being passed to `Utils.matToBitmap()` causing OpenCV assertion failures
+2. **Premature Mat release** in MainActivity callback causing "Invalid processed frame" errors
 
-### The Fix
+### The Complete Fix
 1. **DisplayManager**: Enhanced format conversion ensures all Mats are converted to BGRA before bitmap creation
-2. **OpenCVProcessor**: Grayscale processing now converts back to BGR format for display compatibility
-3. **Thread Safety**: Synchronized Mat access prevents concurrent modification during conversion
+2. **OpenCVProcessor**: Grayscale processing now converts back to BGR format for display compatibility  
+3. **MainActivity**: Fixed Mat lifecycle - frames are now released AFTER display update, not before
+4. **Thread Safety**: Synchronized Mat access prevents concurrent modification during conversion
+
+### Critical Timing Issue Fixed
+The app was crashing because:
+```java
+// WRONG - Mat released before DisplayManager could use it
+displayManager.updateFrame(processedFrame);
+processedFrame.release(); // ❌ Released too early!
+
+// FIXED - Mat released after DisplayManager processes it
+runOnUiThread(() -> {
+    displayManager.updateFrame(processedFrame);
+    processedFrame.release(); // ✅ Released after use
+});
+```
 
 ## Monitoring Commands
 ```bash
