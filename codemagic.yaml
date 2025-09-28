@@ -472,9 +472,9 @@ workflows:
         script: |
           source $CM_BUILD_DIR/android_env.sh
           cd "$ANDROID_PROJECT_DIR"
-          
+
           echo "=== OPENCV INTEGRATION VALIDATION ==="
-          
+
           # Check OpenCV module structure
           if [ -d "opencv" ]; then
             echo "✅ OpenCV module directory found"
@@ -563,9 +563,9 @@ workflows:
                   echo "Available environment variables:"
                   env | grep -i ndk || echo "No NDK-related environment variables found"
                 fi
-                  
-                  for arch_dir in opencv/src/main/jniLibs/*/; do
-                    if [ -d "$arch_dir" ]; then
+                
+                for arch_dir in opencv/src/main/jniLibs/*/; do
+                  if [ -d "$arch_dir" ]; then
                       arch_name=$(basename "$arch_dir")
                       echo "Processing architecture: $arch_name"
                       
@@ -693,10 +693,6 @@ workflows:
                       fi
                     fi
                   done
-                else
-                  echo "⚠️  Android NDK not found or ANDROID_NDK_ROOT not set"
-                  echo "ANDROID_NDK_ROOT: ${ANDROID_NDK_ROOT:-'not set'}"
-                fi
                 
                 # Fallback: Download libc++_shared.so if not found in NDK
                 if [ "$FOUND_ANY_LIBC" = false ]; then
@@ -1056,7 +1052,7 @@ workflows:
             echo "❌ OpenCV module directory not found"
             exit 1
           fi
-          
+
           # Verify OpenCV is included in settings.gradle
           if grep -q ":opencv" settings.gradle; then
             echo "✅ OpenCV module included in settings.gradle"
@@ -1064,7 +1060,7 @@ workflows:
             echo "❌ OpenCV module not included in settings.gradle"
             exit 1
           fi
-          
+
           # Check app module dependency on OpenCV
           if grep -q "implementation project(':opencv')" app/build.gradle; then
             echo "✅ App module depends on OpenCV"
@@ -1072,7 +1068,7 @@ workflows:
             echo "❌ App module does not depend on OpenCV"
             exit 1
           fi
-          
+
           # Test OpenCV classes compilation
           echo "Testing OpenCV classes availability..."
           if find opencv/src/main/java -name "Mat.java" | grep -q .; then
@@ -1081,16 +1077,16 @@ workflows:
             echo "❌ OpenCV Mat class not found"
             exit 1
           fi
-          
+
           if find opencv/src/main/java -name "Utils.java" | grep -q .; then
             echo "✅ OpenCV Utils class found"
           else
             echo "❌ OpenCV Utils class not found"
             exit 1
           fi
-          
-          echo "✅ OpenCV integration validation completed successfully"
-      
+
+          echo "✅ OpenCV integration validation completed successfully"  
+    
       - name: Pre-build library verification
         script: |
           source $CM_BUILD_DIR/android_env.sh
