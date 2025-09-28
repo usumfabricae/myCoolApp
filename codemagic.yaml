@@ -374,6 +374,110 @@ workflows:
               fi
               
               echo "✅ OpenCV setup verification passed"
+              
+              # Immediately add libc++_shared.so after OpenCV setup
+              echo "=== ADDING LIBC++_SHARED.SO IMMEDIATELY AFTER OPENCV SETUP ==="
+              
+              # Check if we need to add libc++_shared.so
+              NEED_LIBC_DOWNLOAD=false
+              for arch_name in "arm64-v8a" "armeabi-v7a"; do
+                if [ -d "opencv/src/main/jniLibs/$arch_name" ]; then
+                  if [ ! -f "opencv/src/main/jniLibs/$arch_name/libc++_shared.so" ]; then
+                    echo "Missing libc++_shared.so for $arch_name"
+                    NEED_LIBC_DOWNLOAD=true
+                  else
+                    libc_size=$(stat -c%s "opencv/src/main/jniLibs/$arch_name/libc++_shared.so" 2>/dev/null || stat -f%z "opencv/src/main/jniLibs/$arch_name/libc++_shared.so" 2>/dev/null || echo "0")
+                    if [ "$libc_size" -lt 1000 ]; then
+                      echo "Invalid libc++_shared.so for $arch_name (size: $libc_size bytes)"
+                      NEED_LIBC_DOWNLOAD=true
+                    fi
+                  fi
+                fi
+              done
+              
+              if [ "$NEED_LIBC_DOWNLOAD" = true ]; then
+                echo "Downloading libc++_shared.so libraries..."
+                
+                # Create temporary download directory
+                TEMP_LIBC_DIR="$CM_BUILD_DIR/temp-libc-immediate"
+                mkdir -p "$TEMP_LIBC_DIR"
+                cd "$TEMP_LIBC_DIR"
+                
+                # Download for each architecture
+                for arch_name in "arm64-v8a" "armeabi-v7a"; do
+                  if [ -d "$ANDROID_PROJECT_DIR/opencv/src/main/jniLibs/$arch_name" ]; then
+                    echo "Downloading libc++_shared.so for $arch_name..."
+                    
+                    DOWNLOAD_SUCCESS=false
+                    
+                    # Try direct download from GitHub
+                    case "$arch_name" in
+                      "arm64-v8a")
+                        DOWNLOAD_URLS=(
+                          "https://github.com/android/ndk/raw/main/sources/cxx-stl/llvm-libc++/libs/arm64-v8a/libc++_shared.so"
+                          "https://raw.githubusercontent.com/android/ndk/main/sources/cxx-stl/llvm-libc++/libs/arm64-v8a/libc++_shared.so"
+                        )
+                        ;;
+                      "armeabi-v7a")
+                        DOWNLOAD_URLS=(
+                          "https://github.com/android/ndk/raw/main/sources/cxx-stl/llvm-libc++/libs/armeabi-v7a/libc++_shared.so"
+                          "https://raw.githubusercontent.com/android/ndk/main/sources/cxx-stl/llvm-libc++/libs/armeabi-v7a/libc++_shared.so"
+                        )
+                        ;;
+                    esac
+                    
+                    # Try each URL
+                    for url in "${DOWNLOAD_URLS[@]}"; do
+                      echo "  Trying: $url"
+                      if curl -L -f -o "libc++_shared_${arch_name}.so" "$url" 2>/dev/null; then
+                        if [ -f "libc++_shared_${arch_name}.so" ] && [ -s "libc++_shared_${arch_name}.so" ]; then
+                          file_size=$(stat -c%s "libc++_shared_${arch_name}.so" 2>/dev/null || stat -f%z "libc++_shared_${arch_name}.so" 2>/dev/null || echo "0")
+                          
+                          # Verify reasonable size and ELF format
+                          if [ "$file_size" -gt 100000 ]; then
+                            if file "libc++_shared_${arch_name}.so" | grep -q "ELF.*shared object"; then
+                              # Copy to OpenCV module
+                              cp "libc++_shared_${arch_name}.so" "$ANDROID_PROJECT_DIR/opencv/src/main/jniLibs/$arch_name/libc++_shared.so"
+                              chmod 644 "$ANDROID_PROJECT_DIR/opencv/src/main/jniLibs/$arch_name/libc++_shared.so"
+                              
+                              echo "  ✅ Successfully downloaded libc++_shared.so for $arch_name ($file_size bytes)"
+                              DOWNLOAD_SUCCESS=true
+                              break
+                            else
+                              echo "  ❌ Downloaded file is not a valid ELF binary"
+                            fi
+                          else
+                            echo "  ❌ Downloaded file too small ($file_size bytes)"
+                          fi
+                        fi
+                      else
+                        echo "  ❌ Download failed"
+                      fi
+                    done
+                    
+                    if [ "$DOWNLOAD_SUCCESS" = false ]; then
+                      echo "  ⚠️  Failed to download libc++_shared.so for $arch_name"
+                    fi
+                  fi
+                done
+                
+                # Clean up and return to project directory
+                cd "$ANDROID_PROJECT_DIR"
+                rm -rf "$TEMP_LIBC_DIR"
+                
+                # Verify what we have now
+                echo "Post-download verification:"
+                for arch_name in "arm64-v8a" "armeabi-v7a"; do
+                  if [ -f "opencv/src/main/jniLibs/$arch_name/libc++_shared.so" ]; then
+                    libc_size=$(stat -c%s "opencv/src/main/jniLibs/$arch_name/libc++_shared.so" 2>/dev/null || stat -f%z "opencv/src/main/jniLibs/$arch_name/libc++_shared.so" 2>/dev/null || echo "0")
+                    echo "  $arch_name: $libc_size bytes"
+                  else
+                    echo "  $arch_name: NOT FOUND"
+                  fi
+                done
+              else
+                echo "✅ libc++_shared.so already available for all architectures"
+              fi
             else
               echo "❌ OpenCV setup script failed"
               echo "Checking for partial setup..."
@@ -446,14 +550,32 @@ workflows:
                 FOUND_ANY_LIBC=false
                 
                 # Enhanced NDK detection and libc++_shared.so extraction
+                echo "=== SEARCHING FOR LIBC++_SHARED.SO IN NDK ==="
                 if [ -n "$ANDROID_NDK_ROOT" ] && [ -d "$ANDROID_NDK_ROOT" ]; then
                   echo "Android NDK found at: $ANDROID_NDK_ROOT"
                   NDK_VERSION=$(cat "$ANDROID_NDK_ROOT/source.properties" 2>/dev/null | grep 'Pkg.Revision' | cut -d'=' -f2 | tr -d ' ' || echo 'Unknown')
                   echo "NDK version: $NDK_VERSION"
                   
                   # Show NDK directory structure for debugging
-                  echo "NDK directory structure:"
-                  find "$ANDROID_NDK_ROOT" -name "libc++_shared.so" | head -5 || echo "No libc++_shared.so files found in NDK"
+                  echo "Searching for libc++_shared.so in NDK..."
+                  NDK_LIBC_FILES=$(find "$ANDROID_NDK_ROOT" -name "libc++_shared.so" 2>/dev/null)
+                  if [ -n "$NDK_LIBC_FILES" ]; then
+                    echo "Found libc++_shared.so files in NDK:"
+                    echo "$NDK_LIBC_FILES"
+                  else
+                    echo "❌ No libc++_shared.so files found in NDK"
+                  fi
+                  
+                  # Also check for alternative paths
+                  echo "Checking alternative NDK paths..."
+                  find "$ANDROID_NDK_ROOT" -path "*/sources/cxx-stl/*" -name "*.so" | head -5 || echo "No C++ STL libraries found"
+                  find "$ANDROID_NDK_ROOT" -path "*/toolchains/llvm/*" -name "libc++*" | head -5 || echo "No LLVM libc++ libraries found"
+                else
+                  echo "❌ Android NDK not found or ANDROID_NDK_ROOT not set"
+                  echo "ANDROID_NDK_ROOT: ${ANDROID_NDK_ROOT:-'not set'}"
+                  echo "Available environment variables:"
+                  env | grep -i ndk || echo "No NDK-related environment variables found"
+                fi
                   
                   for arch_dir in opencv/src/main/jniLibs/*/; do
                     if [ -d "$arch_dir" ]; then
@@ -737,7 +859,30 @@ workflows:
                   exit 1
                 fi
                 
-                # Handle missing libc++_shared.so with direct download approach
+                # Always attempt to ensure libc++_shared.so is available
+                echo "=== ENSURING LIBC++_SHARED.SO AVAILABILITY ==="
+                echo "Current status: FOUND_ANY_LIBC=$FOUND_ANY_LIBC"
+                
+                # Check what we currently have
+                for arch_name in "arm64-v8a" "armeabi-v7a"; do
+                  if [ -d "opencv/src/main/jniLibs/$arch_name" ]; then
+                    if [ -f "opencv/src/main/jniLibs/$arch_name/libc++_shared.so" ]; then
+                      libc_size=$(stat -c%s "opencv/src/main/jniLibs/$arch_name/libc++_shared.so" 2>/dev/null || stat -f%z "opencv/src/main/jniLibs/$arch_name/libc++_shared.so" 2>/dev/null || echo "0")
+                      echo "Found libc++_shared.so for $arch_name: $libc_size bytes"
+                      if [ "$libc_size" -gt 1000 ]; then
+                        echo "✅ Valid libc++_shared.so already exists for $arch_name"
+                      else
+                        echo "❌ Invalid libc++_shared.so for $arch_name (too small: $libc_size bytes)"
+                        FOUND_ANY_LIBC=false
+                      fi
+                    else
+                      echo "❌ No libc++_shared.so found for $arch_name"
+                      FOUND_ANY_LIBC=false
+                    fi
+                  fi
+                done
+                
+                # Force download if we don't have valid libraries
                 if [ "$FOUND_ANY_LIBC" = false ]; then
                   echo "⚠️  libc++_shared.so was not found in NDK, downloading from reliable source..."
                   
