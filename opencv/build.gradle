@@ -27,7 +27,8 @@ android {
     
     sourceSets {
         main {
-            jniLibs.srcDirs = ['src/main/jniLibs']
+            // Native libraries are moved to app module during CI/CD to avoid duplicates
+            // jniLibs.srcDirs = ['src/main/jniLibs']  // Commented out to prevent duplicate resources
         }
     }
     

@@ -59,10 +59,10 @@ android {
         doNotStrip '**/libopencv_java4.so'
     }
     
-    // Ensure native libraries are included from multiple sources
+    // Native libraries are now included only from app module (moved from OpenCV module during CI/CD)
     sourceSets {
         main {
-            jniLibs.srcDirs = ['src/main/jniLibs', '../opencv/src/main/jniLibs']
+            jniLibs.srcDirs = ['src/main/jniLibs']
         }
     }
     
