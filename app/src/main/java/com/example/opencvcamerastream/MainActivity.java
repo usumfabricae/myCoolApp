@@ -51,6 +51,7 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
     // Additional components referenced in the code
     private com.example.opencvcamerastream.processing.FrameProcessor frameProcessor;
     private com.example.opencvcamerastream.display.DisplayManager displayManager;
+    private com.example.opencvcamerastream.camera.CameraManager cameraManager;
     
     // Error handling and performance monitoring
     private ErrorHandler errorHandler;
@@ -80,6 +81,9 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         
         // Initialize display manager
         initializeDisplayManager();
+        
+        // Initialize camera manager
+        initializeCameraManager();
         
         // Initialize processing mode selection interface
         initializeProcessingModeSelection();
@@ -310,6 +314,11 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             public void onFrameProcessed(@NonNull org.opencv.core.Mat processedFrame, @NonNull android.media.Image originalImage, long processingTimeMs) {
                 Log.v(TAG, "Frame processed in " + processingTimeMs + "ms");
                 
+                // Record performance metrics
+                if (performanceMetricsCollector != null) {
+                    performanceMetricsCollector.recordFrameProcessed(processingTimeMs);
+                }
+                
                 // Display processed frame on UI thread
                 runOnUiThread(() -> {
                     if (displayManager != null && displayManager.isDisplayReady()) {
@@ -360,6 +369,12 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             @Override
             public void onFrameDropped(@NonNull android.media.Image droppedImage) {
                 Log.v(TAG, "Frame dropped due to queue overflow");
+                
+                // Record frame drop in performance metrics
+                if (performanceMetricsCollector != null) {
+                    performanceMetricsCollector.recordFrameDropped("Queue overflow");
+                }
+                
                 droppedImage.close();
             }
         });
@@ -418,6 +433,127 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         } else {
             Log.e(TAG, "TextureView not found in layout");
             Toast.makeText(this, "Display setup error", Toast.LENGTH_LONG).show();
+        }
+    }
+    
+    /**
+     * Initialize camera manager and set up camera callbacks
+     * Requirement 1.1: Access device camera
+     */
+    private void initializeCameraManager() {
+        Log.d(TAG, "Initializing camera components");
+        
+        cameraManager = new com.example.opencvcamerastream.camera.CameraManager(this);
+        
+        // Set error handler for camera manager
+        if (errorHandler != null) {
+            cameraManager.setErrorHandler(errorHandler);
+        }
+        
+        // Set up camera callbacks
+        cameraManager.setCameraCallback(new com.example.opencvcamerastream.camera.CameraManager.CameraCallback() {
+            @Override
+            public void onCameraOpened() {
+                Log.d(TAG, "Camera opened successfully");
+                runOnUiThread(() -> {
+                    Toast.makeText(MainActivity.this, "Camera ready", Toast.LENGTH_SHORT).show();
+                });
+            }
+            
+            @Override
+            public void onCameraClosed() {
+                Log.d(TAG, "Camera closed");
+            }
+            
+            @Override
+            public void onCameraError(int error, String message) {
+                Log.e(TAG, "Camera error: " + error + ", message: " + message);
+                runOnUiThread(() -> {
+                    Toast.makeText(MainActivity.this, "Camera error: " + message, Toast.LENGTH_LONG).show();
+                });
+                
+                // Requirement 4.2: Attempt to reconnect automatically
+                if (isAppInForeground && permissionHandler != null && 
+                    permissionHandler.isCameraPermissionGranted()) {
+                    Log.d(TAG, "Attempting to reconnect camera in 2 seconds");
+                    new android.os.Handler().postDelayed(() -> {
+                        if (isAppInForeground) {
+                            attemptCameraReconnection();
+                        }
+                    }, 2000);
+                }
+            }
+            
+            @Override
+            public void onCameraDisconnected() {
+                Log.w(TAG, "Camera disconnected");
+                runOnUiThread(() -> {
+                    Toast.makeText(MainActivity.this, "Camera disconnected", Toast.LENGTH_SHORT).show();
+                });
+                
+                // Requirement 4.2: Attempt to reconnect automatically
+                if (isAppInForeground && permissionHandler != null && 
+                    permissionHandler.isCameraPermissionGranted()) {
+                    Log.d(TAG, "Attempting to reconnect camera after disconnection");
+                    attemptCameraReconnection();
+                }
+            }
+        });
+        
+        // Set up frame callback for OpenCV processing
+        cameraManager.setFrameCallback(new com.example.opencvcamerastream.camera.CameraManager.FrameCallback() {
+            @Override
+            public void onFrameAvailable(@androidx.annotation.NonNull android.media.Image frame) {
+                // Process frame with OpenCV if initialized
+                if (isOpenCVInitialized && openCVProcessor != null && frameProcessor != null) {
+                    frameProcessor.processFrameAsync(frame);
+                } else {
+                    Log.v(TAG, "Frame available but processing pipeline not ready, closing frame");
+                    frame.close();
+                }
+            }
+        });
+        
+        Log.d(TAG, "Camera components initialized");
+    }
+    
+    /**
+     * Initialize camera when OpenCV is ready and permissions are granted
+     */
+    private void initializeCameraWhenReady() {
+        if (cameraManager != null && isOpenCVInitialized && permissionHandler != null && 
+            permissionHandler.isCameraPermissionGranted()) {
+            
+            Log.d(TAG, "Initializing camera - OpenCV ready and permissions granted");
+            
+            // Initialize camera
+            if (cameraManager.initializeCamera()) {
+                Log.d(TAG, "Camera initialized, starting preview");
+                if (cameraManager.startPreview()) {
+                    Log.i(TAG, "Camera preview started successfully");
+                } else {
+                    Log.e(TAG, "Failed to start camera preview");
+                    Toast.makeText(this, "Failed to start camera preview", Toast.LENGTH_LONG).show();
+                }
+            } else {
+                Log.e(TAG, "Failed to initialize camera");
+                Toast.makeText(this, "Failed to initialize camera", Toast.LENGTH_LONG).show();
+            }
+        } else {
+            Log.d(TAG, "Camera initialization deferred - waiting for OpenCV and permissions");
+        }
+    }
+    
+    /**
+     * Attempt to reconnect camera after error or disconnection
+     * Requirement 4.2: Attempt to reconnect automatically when camera becomes unavailable
+     */
+    private void attemptCameraReconnection() {
+        Log.d(TAG, "Attempting camera reconnection");
+        
+        if (cameraManager != null) {
+            // Use the camera manager's built-in reconnection logic instead of manual release/reinit
+            cameraManager.attemptReconnection();
         }
     }
     
@@ -1695,5 +1831,137 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             Log.e(TAG, "❌ Failed to extract and load " + libraryFileName + " from assets: " + e.getMessage());
             return false;
         }
+    }
+}  
+          return true;
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to extract and load " + libraryFileName + " from assets", e);
+            return false;
+        }
+    }
+    
+    // ========== LIFECYCLE METHODS ==========
+    
+    @Override
+    protected void onResume() {
+        super.onResume();
+        Log.d(TAG, "MainActivity onResume");
+        
+        isAppInForeground = true;
+        
+        // Start performance monitoring
+        if (performanceMetricsCollector != null) {
+            performanceMetricsCollector.startMonitoring();
+            Log.d(TAG, "Performance monitoring started");
+        }
+        
+        // Resume performance display
+        if (performanceDisplayManager != null) {
+            performanceDisplayManager.onResume();
+        }
+        
+        // Resume display manager
+        if (displayManager != null) {
+            displayManager.onResume();
+        }
+        
+        // Resume frame processor
+        if (frameProcessor != null) {
+            frameProcessor.start();
+        }
+        
+        // Note: ErrorHandler and PerformanceMonitor don't have lifecycle methods
+        
+        Log.i(TAG, "MainActivity resume completed - all systems active");
+    }
+    
+    @Override
+    protected void onPause() {
+        super.onPause();
+        Log.d(TAG, "MainActivity onPause");
+        
+        isAppInForeground = false;
+        
+        // Pause performance monitoring
+        if (performanceMetricsCollector != null) {
+            performanceMetricsCollector.stopMonitoring();
+            Log.d(TAG, "Performance monitoring stopped");
+        }
+        
+        // Pause performance display
+        if (performanceDisplayManager != null) {
+            performanceDisplayManager.onPause();
+        }
+        
+        // Pause display manager
+        if (displayManager != null) {
+            displayManager.onPause();
+        }
+        
+        // Pause frame processor
+        if (frameProcessor != null) {
+            frameProcessor.stop();
+        }
+        
+        // Note: ErrorHandler and PerformanceMonitor don't have lifecycle methods
+        
+        Log.i(TAG, "MainActivity pause completed - systems suspended");
+    }
+    
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        Log.d(TAG, "MainActivity onDestroy");
+        
+        // Release performance monitoring
+        if (performanceMetricsCollector != null) {
+            performanceMetricsCollector.release();
+            performanceMetricsCollector = null;
+        }
+        
+        // Release performance display
+        if (performanceDisplayManager != null) {
+            performanceDisplayManager.release();
+            performanceDisplayManager = null;
+        }
+        
+        // Release display manager
+        if (displayManager != null) {
+            displayManager.release();
+            displayManager = null;
+        }
+        
+        // Release frame processor
+        if (frameProcessor != null) {
+            frameProcessor.stop();
+            frameProcessor = null;
+        }
+        
+        // Release camera manager
+        if (cameraManager != null) {
+            cameraManager.release();
+            cameraManager = null;
+        }
+        
+        // Release OpenCV processor
+        if (openCVProcessor != null) {
+            openCVProcessor.release();
+            openCVProcessor = null;
+        }
+        
+        // Clear error handler reference
+        errorHandler = null;
+        
+        // Clear performance monitor reference
+        performanceMonitor = null;
+        
+        // Release error dialog manager
+        if (errorDialogManager != null) {
+            errorDialogManager.release();
+            errorDialogManager = null;
+        }
+        
+        Log.i(TAG, "MainActivity destroyed - all resources released");
     }
 }
