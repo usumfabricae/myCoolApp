@@ -121,13 +121,22 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
             return false;
         }
         
+        // Validate input Mat before processing
+        if (processedFrame == null || processedFrame.empty() || 
+            processedFrame.width() <= 0 || processedFrame.height() <= 0) {
+            Log.w(TAG, "Invalid processed frame - skipping display update");
+            return false;
+        }
+        
         long startTime = System.currentTimeMillis();
         
         try {
             // Convert Mat to Bitmap
             Bitmap bitmap = matToBitmap(processedFrame);
             if (bitmap == null) {
-                Log.w(TAG, "Failed to convert Mat to Bitmap");
+                Log.w(TAG, "Failed to convert Mat to Bitmap - Mat: " + 
+                      processedFrame.width() + "x" + processedFrame.height() + 
+                      ", empty: " + processedFrame.empty());
                 return false;
             }
             
@@ -189,9 +198,31 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
     @Nullable
     private Bitmap matToBitmap(@NonNull Mat mat) {
         try {
+            // Validate Mat dimensions before conversion
+            if (mat.empty() || mat.width() <= 0 || mat.height() <= 0) {
+                Log.w(TAG, "Invalid Mat dimensions: " + mat.width() + "x" + mat.height() + ", empty: " + mat.empty());
+                return null;
+            }
+            
+            // Validate Mat data integrity
+            if (mat.total() == 0 || mat.channels() <= 0) {
+                Log.w(TAG, "Invalid Mat data: total=" + mat.total() + ", channels=" + mat.channels());
+                return null;
+            }
+            
+            // Additional safety check for reasonable dimensions
+            if (mat.width() > 4096 || mat.height() > 4096) {
+                Log.w(TAG, "Mat dimensions too large: " + mat.width() + "x" + mat.height());
+                return null;
+            }
+            
             Bitmap bitmap = Bitmap.createBitmap(mat.width(), mat.height(), Bitmap.Config.ARGB_8888);
             Utils.matToBitmap(mat, bitmap);
             return bitmap;
+        } catch (IllegalArgumentException e) {
+            Log.e(TAG, "IllegalArgumentException in Mat to Bitmap conversion - Mat dimensions: " + 
+                  mat.width() + "x" + mat.height() + ", empty: " + mat.empty(), e);
+            return null;
         } catch (Exception e) {
             Log.e(TAG, "Failed to convert Mat to Bitmap", e);
             return null;

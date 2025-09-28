@@ -211,13 +211,20 @@ public class OpenCVProcessor {
     public Mat processFrame(@NonNull Mat inputFrame) {
         if (!isInitialized) {
             Log.w(TAG, "Processor not initialized, returning original frame");
-            return inputFrame.clone();
+            return createValidFallbackFrame(inputFrame);
+        }
+        
+        // Validate input frame
+        if (inputFrame == null || inputFrame.empty() || 
+            inputFrame.width() <= 0 || inputFrame.height() <= 0) {
+            Log.w(TAG, "Invalid input frame, creating fallback");
+            return createValidFallbackFrame(inputFrame);
         }
         
         // Check if in fallback mode due to consecutive errors
         if (fallbackMode) {
             Log.d(TAG, "In fallback mode, returning original frame");
-            return inputFrame.clone();
+            return createValidFallbackFrame(inputFrame);
         }
         
         long startTime = System.currentTimeMillis();
@@ -312,7 +319,16 @@ public class OpenCVProcessor {
             }
             
             // Requirement 4.3: Fall back to original frame on processing failure
-            return inputFrame != null ? inputFrame.clone() : new Mat();
+            if (inputFrame != null && !inputFrame.empty() && 
+                inputFrame.width() > 0 && inputFrame.height() > 0) {
+                return inputFrame.clone();
+            } else {
+                Log.e(TAG, "Input frame is invalid, creating empty fallback Mat");
+                // Create a minimal valid Mat as last resort
+                Mat fallbackMat = new Mat(1, 1, org.opencv.core.CvType.CV_8UC3);
+                fallbackMat.setTo(new org.opencv.core.Scalar(0, 0, 0));
+                return fallbackMat;
+            }
         }
     }
     
@@ -366,6 +382,22 @@ public class OpenCVProcessor {
     }
     
     /**
+     * Create a valid fallback frame when input is invalid
+     */
+    private Mat createValidFallbackFrame(@Nullable Mat inputFrame) {
+        if (inputFrame != null && !inputFrame.empty() && 
+            inputFrame.width() > 0 && inputFrame.height() > 0) {
+            return inputFrame.clone();
+        }
+        
+        // Create a minimal valid black frame as fallback
+        Log.w(TAG, "Creating minimal fallback frame");
+        Mat fallbackMat = new Mat(240, 320, org.opencv.core.CvType.CV_8UC3);
+        fallbackMat.setTo(new org.opencv.core.Scalar(0, 0, 0));
+        return fallbackMat;
+    }
+    
+    /**
      * Apply quality reduction for performance optimization
      */
     private Mat applyQualityReduction(@NonNull Mat inputFrame, float qualityFactor) {
@@ -401,6 +433,12 @@ public class OpenCVProcessor {
         Mat grayFrame = new Mat();
         
         try {
+            // Validate input
+            if (inputFrame.empty() || inputFrame.width() <= 0 || inputFrame.height() <= 0) {
+                Log.w(TAG, "Invalid input frame for grayscale conversion");
+                return createValidFallbackFrame(inputFrame);
+            }
+            
             if (inputFrame.channels() == 3) {
                 // RGB to Grayscale
                 Imgproc.cvtColor(inputFrame, grayFrame, Imgproc.COLOR_RGB2GRAY);
@@ -412,10 +450,18 @@ public class OpenCVProcessor {
                 grayFrame = inputFrame.clone();
             }
             
+            // Validate output
+            if (grayFrame.empty() || grayFrame.width() <= 0 || grayFrame.height() <= 0) {
+                Log.w(TAG, "Grayscale conversion produced invalid result");
+                grayFrame.release();
+                return createValidFallbackFrame(inputFrame);
+            }
+            
             return grayFrame;
             
         } catch (Exception e) {
             Log.e(TAG, "Error converting to grayscale", e);
+            if (grayFrame != null) grayFrame.release();
             throw e;
         }
     }
