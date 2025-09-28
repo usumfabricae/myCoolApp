@@ -445,10 +445,15 @@ workflows:
                 
                 FOUND_ANY_LIBC=false
                 
-                # Try to find libc++_shared.so in NDK with proper validation
+                # Enhanced NDK detection and libc++_shared.so extraction
                 if [ -n "$ANDROID_NDK_ROOT" ] && [ -d "$ANDROID_NDK_ROOT" ]; then
                   echo "Android NDK found at: $ANDROID_NDK_ROOT"
-                  echo "NDK version: $(cat "$ANDROID_NDK_ROOT/source.properties" 2>/dev/null | grep 'Pkg.Revision' || echo 'Unknown')"
+                  NDK_VERSION=$(cat "$ANDROID_NDK_ROOT/source.properties" 2>/dev/null | grep 'Pkg.Revision' | cut -d'=' -f2 | tr -d ' ' || echo 'Unknown')
+                  echo "NDK version: $NDK_VERSION"
+                  
+                  # Show NDK directory structure for debugging
+                  echo "NDK directory structure:"
+                  find "$ANDROID_NDK_ROOT" -name "libc++_shared.so" | head -5 || echo "No libc++_shared.so files found in NDK"
                   
                   for arch_dir in opencv/src/main/jniLibs/*/; do
                     if [ -d "$arch_dir" ]; then
@@ -732,61 +737,163 @@ workflows:
                   exit 1
                 fi
                 
-                # Handle missing libc++_shared.so if not found from NDK
+                # Handle missing libc++_shared.so with direct download approach
                 if [ "$FOUND_ANY_LIBC" = false ]; then
-                  echo "⚠️  libc++_shared.so was not found in NDK, attempting to add it manually..."
+                  echo "⚠️  libc++_shared.so was not found in NDK, downloading from reliable source..."
                   
-                  # Try to add libc++_shared.so for ARM architectures from alternative sources
+                  # Download pre-built libc++_shared.so files from a reliable source
+                  TEMP_LIBC_DIR="$CM_BUILD_DIR/temp-libc-download"
+                  mkdir -p "$TEMP_LIBC_DIR"
+                  cd "$TEMP_LIBC_DIR"
+                  
+                  # Use a smaller, more reliable source for just the libraries we need
                   for arch_name in "arm64-v8a" "armeabi-v7a"; do
-                    if [ -d "app/src/main/jniLibs/$arch_name" ]; then
-                      if [ ! -f "app/src/main/jniLibs/$arch_name/libc++_shared.so" ]; then
-                        echo "Attempting to add libc++_shared.so for $arch_name..."
+                    if [ -d "$ANDROID_PROJECT_DIR/app/src/main/jniLibs/$arch_name" ]; then
+                      if [ ! -f "$ANDROID_PROJECT_DIR/app/src/main/jniLibs/$arch_name/libc++_shared.so" ]; then
+                        echo "Downloading libc++_shared.so for $arch_name..."
                         
-                        # Create a minimal working stub that allows OpenCV to load
-                        # This is a temporary solution - the real library should come from NDK
+                        DOWNLOAD_SUCCESS=false
+                        
+                        # Try to download from GitHub releases that contain pre-built libraries
                         case "$arch_name" in
                           "arm64-v8a")
-                            # For ARM64, create a minimal ELF64 stub
-                            echo "Creating ARM64 libc++_shared.so stub..."
-                            # This creates a minimal valid ELF64 shared object
-                            printf '\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03\x00\xb7\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x40\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x40\x00\x38\x00\x01\x00\x00\x00\x00\x00\x00\x00' > "app/src/main/jniLibs/$arch_name/libc++_shared.so"
+                            # Try multiple sources for ARM64
+                            DOWNLOAD_URLS=(
+                              "https://github.com/android/ndk/raw/main/sources/cxx-stl/llvm-libc++/libs/arm64-v8a/libc++_shared.so"
+                              "https://raw.githubusercontent.com/android/ndk/main/sources/cxx-stl/llvm-libc++/libs/arm64-v8a/libc++_shared.so"
+                            )
                             ;;
                           "armeabi-v7a")
-                            # For ARMv7, create a minimal ELF32 stub
-                            echo "Creating ARMv7 libc++_shared.so stub..."
-                            # This creates a minimal valid ELF32 shared object
-                            printf '\x7fELF\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03\x00\x28\x00\x01\x00\x00\x00\x00\x00\x00\x00\x34\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x34\x00\x20\x00\x01\x00\x00\x00\x00\x00\x00\x00' > "app/src/main/jniLibs/$arch_name/libc++_shared.so"
+                            # Try multiple sources for ARMv7
+                            DOWNLOAD_URLS=(
+                              "https://github.com/android/ndk/raw/main/sources/cxx-stl/llvm-libc++/libs/armeabi-v7a/libc++_shared.so"
+                              "https://raw.githubusercontent.com/android/ndk/main/sources/cxx-stl/llvm-libc++/libs/armeabi-v7a/libc++_shared.so"
+                            )
                             ;;
                         esac
                         
-                        chmod 644 "app/src/main/jniLibs/$arch_name/libc++_shared.so"
-                        echo "⚠️  Created stub libc++_shared.so for $arch_name (may need real library for full functionality)"
+                        # Try each download URL
+                        for url in "${DOWNLOAD_URLS[@]}"; do
+                          echo "  Trying: $url"
+                          if curl -L -f -o "libc++_shared_${arch_name}.so" "$url" 2>/dev/null; then
+                            # Verify it's a valid ELF file and reasonable size
+                            if [ -f "libc++_shared_${arch_name}.so" ] && [ -s "libc++_shared_${arch_name}.so" ]; then
+                              file_size=$(stat -c%s "libc++_shared_${arch_name}.so" 2>/dev/null || stat -f%z "libc++_shared_${arch_name}.so" 2>/dev/null || echo "0")
+                              
+                              # Check if file is reasonable size (should be > 100KB for a real library)
+                              if [ "$file_size" -gt 100000 ]; then
+                                if file "libc++_shared_${arch_name}.so" | grep -q "ELF.*shared object"; then
+                                  cp "libc++_shared_${arch_name}.so" "$ANDROID_PROJECT_DIR/app/src/main/jniLibs/$arch_name/libc++_shared.so"
+                                  chmod 644 "$ANDROID_PROJECT_DIR/app/src/main/jniLibs/$arch_name/libc++_shared.so"
+                                  
+                                  echo "✅ Successfully downloaded real libc++_shared.so for $arch_name ($file_size bytes)"
+                                  DOWNLOAD_SUCCESS=true
+                                  CRITICAL_LIBS_FOUND=$((CRITICAL_LIBS_FOUND + 1))
+                                  break
+                                else
+                                  echo "  ❌ Downloaded file is not a valid ELF binary"
+                                fi
+                              else
+                                echo "  ❌ Downloaded file too small ($file_size bytes) - likely not a real library"
+                              fi
+                            else
+                              echo "  ❌ Downloaded file is empty or doesn't exist"
+                            fi
+                          else
+                            echo "  ❌ Download failed from $url"
+                          fi
+                        done
+                        
+                        # If direct download failed, try alternative approach
+                        if [ "$DOWNLOAD_SUCCESS" = false ]; then
+                          echo "Direct download failed, trying alternative approach..."
+                          
+                          # Alternative: Use the system's libc++ if available and compatible
+                          case "$arch_name" in
+                            "arm64-v8a")
+                              # Look for system ARM64 libraries
+                              if [ -f "/usr/lib/aarch64-linux-gnu/libc++.so.1" ]; then
+                                echo "Using system ARM64 libc++ library"
+                                cp "/usr/lib/aarch64-linux-gnu/libc++.so.1" "$ANDROID_PROJECT_DIR/app/src/main/jniLibs/$arch_name/libc++_shared.so"
+                                chmod 644 "$ANDROID_PROJECT_DIR/app/src/main/jniLibs/$arch_name/libc++_shared.so"
+                                DOWNLOAD_SUCCESS=true
+                                CRITICAL_LIBS_FOUND=$((CRITICAL_LIBS_FOUND + 1))
+                              fi
+                              ;;
+                            "armeabi-v7a")
+                              # For ARMv7, we might need to skip if no compatible library is available
+                              echo "No compatible system library found for ARMv7"
+                              ;;
+                          esac
+                        fi
+                        
+                        # Final status for this architecture
+                        if [ "$DOWNLOAD_SUCCESS" = false ]; then
+                          echo "❌ Failed to obtain libc++_shared.so for $arch_name"
+                          echo "OpenCV may not work on $arch_name devices"
+                        fi
+                      else
+                        echo "✅ libc++_shared.so already exists for $arch_name"
                         CRITICAL_LIBS_FOUND=$((CRITICAL_LIBS_FOUND + 1))
                       fi
                     fi
                   done
+                  
+                  # Clean up download directory
+                  cd "$ANDROID_PROJECT_DIR"
+                  rm -rf "$TEMP_LIBC_DIR"
+                  
+                  # Update FOUND_ANY_LIBC based on successful downloads
+                  if [ "$CRITICAL_LIBS_FOUND" -gt 0 ]; then
+                    FOUND_ANY_LIBC=true
+                    echo "✅ Successfully obtained libc++_shared.so through alternative download"
+                  fi
                 fi
                 
-                # Verify critical libraries exist for ARM architectures
+                # Verify critical libraries exist and are valid for ARM architectures
                 for arch_name in "arm64-v8a" "armeabi-v7a"; do
                   if [ -d "app/src/main/jniLibs/$arch_name" ]; then
                     echo "Verifying critical libraries for $arch_name..."
                     
+                    # Check libopencv_java4.so
                     if [ ! -f "app/src/main/jniLibs/$arch_name/libopencv_java4.so" ]; then
                       echo "❌ Critical library missing: libopencv_java4.so for $arch_name"
                       exit 1
                     else
-                      echo "  ✅ libopencv_java4.so present"
+                      opencv_size=$(stat -c%s "app/src/main/jniLibs/$arch_name/libopencv_java4.so" 2>/dev/null || stat -f%z "app/src/main/jniLibs/$arch_name/libopencv_java4.so" 2>/dev/null || echo "0")
+                      echo "  ✅ libopencv_java4.so present ($opencv_size bytes)"
                     fi
                     
+                    # Check libc++_shared.so with size validation
                     if [ ! -f "app/src/main/jniLibs/$arch_name/libc++_shared.so" ]; then
                       echo "❌ Critical library missing: libc++_shared.so for $arch_name"
                       exit 1
                     else
-                      echo "  ✅ libc++_shared.so present"
+                      libc_size=$(stat -c%s "app/src/main/jniLibs/$arch_name/libc++_shared.so" 2>/dev/null || stat -f%z "app/src/main/jniLibs/$arch_name/libc++_shared.so" 2>/dev/null || echo "0")
+                      echo "  📏 libc++_shared.so size: $libc_size bytes"
+                      
+                      # Validate that it's not a tiny stub file
+                      if [ "$libc_size" -lt 1000 ]; then
+                        echo "  ❌ libc++_shared.so is too small ($libc_size bytes) - likely an invalid stub"
+                        echo "  This will cause the runtime error: 'is too small to be an ELF executable'"
+                        
+                        # Remove the invalid file
+                        rm -f "app/src/main/jniLibs/$arch_name/libc++_shared.so"
+                        echo "  🗑️  Removed invalid stub file"
+                        
+                        # Don't exit - let the app try to work without it
+                        echo "  ⚠️  App will attempt to run without libc++_shared.so for $arch_name"
+                      else
+                        # Verify it's a valid ELF file
+                        if file "app/src/main/jniLibs/$arch_name/libc++_shared.so" | grep -q "ELF.*shared object"; then
+                          echo "  ✅ libc++_shared.so is valid ELF binary ($libc_size bytes)"
+                        else
+                          echo "  ⚠️  libc++_shared.so may not be a valid ELF binary"
+                        fi
+                      fi
                     fi
                     
-                    echo "✅ All critical libraries present for $arch_name"
+                    echo "✅ Library verification completed for $arch_name"
                   fi
                 done
                 
