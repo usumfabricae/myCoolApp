@@ -426,11 +426,12 @@ public class OpenCVProcessor {
     }
     
     /**
-     * Convert frame to grayscale
+     * Convert frame to grayscale but maintain multi-channel format for display compatibility
      * Requirement 2.2: Apply basic image processing operations
      */
     private Mat convertToGrayscale(@NonNull Mat inputFrame) {
         Mat grayFrame = new Mat();
+        Mat displayFrame = new Mat();
         
         try {
             // Validate input
@@ -450,18 +451,28 @@ public class OpenCVProcessor {
                 grayFrame = inputFrame.clone();
             }
             
-            // Validate output
-            if (grayFrame.empty() || grayFrame.width() <= 0 || grayFrame.height() <= 0) {
-                Log.w(TAG, "Grayscale conversion produced invalid result");
+            // CRITICAL FIX: Convert single-channel grayscale back to multi-channel for display
+            // This prevents the OpenCV assertion failure in Utils.matToBitmap()
+            if (grayFrame.channels() == 1) {
+                Imgproc.cvtColor(grayFrame, displayFrame, Imgproc.COLOR_GRAY2BGR);
                 grayFrame.release();
+            } else {
+                displayFrame = grayFrame;
+            }
+            
+            // Validate output
+            if (displayFrame.empty() || displayFrame.width() <= 0 || displayFrame.height() <= 0) {
+                Log.w(TAG, "Grayscale conversion produced invalid result");
+                displayFrame.release();
                 return createValidFallbackFrame(inputFrame);
             }
             
-            return grayFrame;
+            return displayFrame;
             
         } catch (Exception e) {
             Log.e(TAG, "Error converting to grayscale", e);
             if (grayFrame != null) grayFrame.release();
+            if (displayFrame != null) displayFrame.release();
             throw e;
         }
     }
@@ -490,9 +501,9 @@ public class OpenCVProcessor {
                     config.cannyHighThreshold, 
                     config.cannyApertureSize);
             
-            // Convert back to 3-channel for display consistency
+            // Convert back to 3-channel for display consistency (BGR format for bitmap compatibility)
             Mat colorEdgeFrame = new Mat();
-            Imgproc.cvtColor(edgeFrame, colorEdgeFrame, Imgproc.COLOR_GRAY2RGB);
+            Imgproc.cvtColor(edgeFrame, colorEdgeFrame, Imgproc.COLOR_GRAY2BGR);
             
             // Clean up intermediate matrices
             grayFrame.release();

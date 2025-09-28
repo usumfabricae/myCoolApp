@@ -12,6 +12,9 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import org.opencv.android.Utils;
 import org.opencv.core.Mat;
+import org.opencv.core.CvType;
+import org.opencv.core.Scalar;
+import org.opencv.imgproc.Imgproc;
 
 /**
  * DisplayManager handles the display of processed frames using TextureView
@@ -190,41 +193,155 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
     }
     
     /**
-     * Convert OpenCV Mat to Android Bitmap
+     * Convert OpenCV Mat to Android Bitmap with enhanced safety and format handling
      * 
      * @param mat The OpenCV Mat to convert
      * @return Bitmap or null if conversion failed
      */
     @Nullable
     private Bitmap matToBitmap(@NonNull Mat mat) {
+        // Thread-safe Mat cloning to prevent concurrent modification
+        Mat safeMat = null;
+        Mat convertedMat = null;
+        
         try {
-            // Validate Mat dimensions before conversion
-            if (mat.empty() || mat.width() <= 0 || mat.height() <= 0) {
-                Log.w(TAG, "Invalid Mat dimensions: " + mat.width() + "x" + mat.height() + ", empty: " + mat.empty());
-                return null;
+            synchronized (mat) {
+                // Deep validation of Mat properties
+                if (mat.empty() || mat.width() <= 0 || mat.height() <= 0) {
+                    Log.w(TAG, "Invalid Mat dimensions: " + mat.width() + "x" + mat.height());
+                    return createFallbackBitmap();
+                }
+                
+                if (mat.total() == 0 || mat.channels() <= 0 || mat.channels() > 4) {
+                    Log.w(TAG, "Invalid Mat data: total=" + mat.total() + ", channels=" + mat.channels());
+                    return createFallbackBitmap();
+                }
+                
+                // Validate Mat type and data integrity
+                int matType = mat.type();
+                if (matType < 0 || !mat.isContinuous()) {
+                    Log.w(TAG, "Invalid Mat type or non-continuous data: type=" + matType + ", continuous=" + mat.isContinuous());
+                    return createFallbackBitmap();
+                }
+                
+                // Additional safety check for reasonable dimensions
+                if (mat.width() > 4096 || mat.height() > 4096) {
+                    Log.w(TAG, "Mat dimensions too large: " + mat.width() + "x" + mat.height());
+                    return createFallbackBitmap();
+                }
+                
+                // Create a safe clone to prevent memory corruption
+                safeMat = mat.clone();
             }
             
-            // Validate Mat data integrity
-            if (mat.total() == 0 || mat.channels() <= 0) {
-                Log.w(TAG, "Invalid Mat data: total=" + mat.total() + ", channels=" + mat.channels());
-                return null;
-            }
+            // Ensure proper Mat format for bitmap conversion
+            convertedMat = ensureCompatibleFormat(safeMat);
             
-            // Additional safety check for reasonable dimensions
-            if (mat.width() > 4096 || mat.height() > 4096) {
-                Log.w(TAG, "Mat dimensions too large: " + mat.width() + "x" + mat.height());
-                return null;
-            }
+            // Determine appropriate bitmap configuration
+            Bitmap.Config config = getBitmapConfig(convertedMat.channels());
             
-            Bitmap bitmap = Bitmap.createBitmap(mat.width(), mat.height(), Bitmap.Config.ARGB_8888);
-            Utils.matToBitmap(mat, bitmap);
+            // Create bitmap with validated parameters
+            Bitmap bitmap = Bitmap.createBitmap(
+                convertedMat.width(), 
+                convertedMat.height(), 
+                config
+            );
+            
+            // Safe OpenCV conversion with error handling
+            Utils.matToBitmap(convertedMat, bitmap);
+            
             return bitmap;
+            
         } catch (IllegalArgumentException e) {
-            Log.e(TAG, "IllegalArgumentException in Mat to Bitmap conversion - Mat dimensions: " + 
-                  mat.width() + "x" + mat.height() + ", empty: " + mat.empty(), e);
-            return null;
+            Log.e(TAG, "IllegalArgumentException in Mat to Bitmap conversion", e);
+            return createFallbackBitmap();
         } catch (Exception e) {
-            Log.e(TAG, "Failed to convert Mat to Bitmap", e);
+            Log.e(TAG, "Critical error in Mat to Bitmap conversion", e);
+            return createFallbackBitmap();
+        } finally {
+            // Clean up temporary Mat objects
+            if (safeMat != null) {
+                safeMat.release();
+            }
+            if (convertedMat != null && convertedMat != safeMat) {
+                convertedMat.release();
+            }
+        }
+    }
+    
+    /**
+     * Ensure Mat is in a format compatible with Android Bitmap conversion
+     * 
+     * @param inputMat The input Mat to convert
+     * @return Mat in compatible format (BGRA)
+     */
+    @NonNull
+    private Mat ensureCompatibleFormat(@NonNull Mat inputMat) {
+        int channels = inputMat.channels();
+        
+        try {
+            // Handle different channel configurations
+            switch (channels) {
+                case 1: // Grayscale - convert to BGRA for bitmap
+                    Mat bgraMat = new Mat();
+                    Imgproc.cvtColor(inputMat, bgraMat, Imgproc.COLOR_GRAY2BGRA);
+                    return bgraMat;
+                    
+                case 3: // BGR - convert to BGRA for bitmap
+                    Mat bgra3Mat = new Mat();
+                    Imgproc.cvtColor(inputMat, bgra3Mat, Imgproc.COLOR_BGR2BGRA);
+                    return bgra3Mat;
+                    
+                case 4: // Already BGRA - ensure correct format
+                    if (inputMat.type() == CvType.CV_8UC4) {
+                        return inputMat; // Already compatible
+                    } else {
+                        Mat bgra4Mat = new Mat();
+                        inputMat.convertTo(bgra4Mat, CvType.CV_8UC4);
+                        return bgra4Mat;
+                    }
+                    
+                default:
+                    Log.w(TAG, "Unsupported channel count: " + channels + ", creating fallback");
+                    Mat fallbackMat = new Mat(inputMat.rows(), inputMat.cols(), CvType.CV_8UC4);
+                    fallbackMat.setTo(new Scalar(0, 0, 0, 255)); // Black with full alpha
+                    return fallbackMat;
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error converting Mat format", e);
+            // Return a safe fallback Mat
+            Mat fallbackMat = new Mat(inputMat.rows(), inputMat.cols(), CvType.CV_8UC4);
+            fallbackMat.setTo(new Scalar(0, 0, 0, 255)); // Black with full alpha
+            return fallbackMat;
+        }
+    }
+    
+    /**
+     * Get appropriate bitmap configuration based on Mat channels
+     * 
+     * @param channels Number of channels in the Mat
+     * @return Bitmap configuration
+     */
+    @NonNull
+    private Bitmap.Config getBitmapConfig(int channels) {
+        // Always use ARGB_8888 for maximum compatibility
+        return Bitmap.Config.ARGB_8888;
+    }
+    
+    /**
+     * Create a fallback bitmap when Mat conversion fails
+     * 
+     * @return Safe fallback bitmap or null if creation fails
+     */
+    @Nullable
+    private Bitmap createFallbackBitmap() {
+        try {
+            Bitmap fallback = Bitmap.createBitmap(320, 240, Bitmap.Config.ARGB_8888);
+            fallback.eraseColor(android.graphics.Color.BLACK);
+            Log.d(TAG, "Created fallback bitmap: 320x240");
+            return fallback;
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to create fallback bitmap", e);
             return null;
         }
     }
