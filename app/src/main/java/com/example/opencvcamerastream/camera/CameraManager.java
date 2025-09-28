@@ -753,7 +753,23 @@ public class CameraManager {
             try {
                 image = reader.acquireLatestImage();
                 if (image != null && frameCallback != null) {
-                    frameCallback.onFrameAvailable(image);
+                    // Pass the image to the callback - the callback is responsible for closing it
+                    // This prevents "Image is already closed" errors in async processing
+                    try {
+                        frameCallback.onFrameAvailable(image);
+                        // Don't close the image here - let the frame processor handle it
+                        image = null; // Prevent closing in finally block
+                    } catch (Exception callbackException) {
+                        Log.e(TAG, "Error in frame callback", callbackException);
+                        if (errorHandler != null) {
+                            errorHandler.handleSystemError(callbackException, "frame callback");
+                        }
+                        // If callback fails, we need to close the image
+                        if (image != null) {
+                            image.close();
+                            image = null;
+                        }
+                    }
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Error processing captured image", e);
@@ -761,6 +777,7 @@ public class CameraManager {
                     errorHandler.handleSystemError(e, "image processing");
                 }
             } finally {
+                // Only close if the callback didn't handle it
                 if (image != null) {
                     image.close();
                 }
