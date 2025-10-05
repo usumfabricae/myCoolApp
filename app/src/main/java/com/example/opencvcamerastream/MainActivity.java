@@ -1171,59 +1171,7 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         }
     }
     
-    /**
-     * Initialize OpenCV with system libraries
-     * Attempts to load OpenCV from system libraries first, then falls back to OpenCV Manager
-     */
-    private void initializeOpenCVWithSystemLibraries() {
-        Log.d(TAG, "Initializing OpenCV with system libraries");
-        
-        if (!OpenCVLoader.initDebug()) {
-            Log.d(TAG, "Internal OpenCV library not found. Using OpenCV Manager for initialization");
-            OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION, this, openCVLoaderCallback);
-        } else {
-            Log.d(TAG, "OpenCV library found inside package. Using it!");
-            openCVLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
-        }
-    }
-    
-    /**
-     * Run Android 10 compliance tests on resume
-     */
-    private void runAndroid10ComplianceTests() {
-        if (complianceValidator != null) {
-            Log.d(TAG, "Running Android 10 compliance tests on resume");
-            
-            // Run compliance validation in background thread to avoid blocking UI
-            new Thread(() -> {
-                Android10ComplianceValidator.ComplianceResult result = complianceValidator.validateCompliance();
-                Log.d(TAG, "Android 10 compliance test result: " + result.summary);
-                
-                if (!result.isCompliant) {
-                    Log.w(TAG, "Android 10 compliance issues detected on resume");
-                    for (Android10ComplianceValidator.ComplianceIssue issue : result.issues) {
-                        Log.w(TAG, "  " + issue.toString());
-                    }
-                }
-            }).start();
-        }
-    }
-    
-    /**
-     * Test camera privacy controls for Android 10 compliance
-     */
-    private void testCameraPrivacyControls() {
-        if (complianceValidator != null) {
-            Log.d(TAG, "Testing camera privacy controls");
-            
-            // Test camera privacy controls in background thread
-            new Thread(() -> {
-                boolean privacyCompliance = complianceValidator.testCameraPrivacyControls(this);
-                Log.i(TAG, "Camera privacy controls test result: " + 
-                        (privacyCompliance ? "PASSED" : "FAILED"));
-            }).start();
-        }
-    }
+
     
 
     
