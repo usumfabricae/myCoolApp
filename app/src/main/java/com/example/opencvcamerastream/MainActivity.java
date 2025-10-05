@@ -751,6 +751,18 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
                             Log.e(TAG, "Failed to start frame processor");
                         }
                         
+                        // Start performance monitoring
+                        if (performanceMetricsCollector != null) {
+                            performanceMetricsCollector.startMonitoring();
+                            Log.d(TAG, "Performance monitoring started");
+                        }
+                        
+                        // Show performance overlay by default for debugging
+                        if (performanceDisplayManager != null) {
+                            performanceDisplayManager.showPerformanceOverlay();
+                            Log.d(TAG, "Performance overlay shown");
+                        }
+                        
                         // If camera permission is already granted, proceed with camera initialization
                         if (permissionHandler != null && permissionHandler.isCameraPermissionGranted()) {
                             initializeCameraComponents();
@@ -809,6 +821,13 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         if (permissionHandler != null && permissionHandler.isCameraPermissionGranted()) {
             initializeCameraComponents();
         }
+        
+        // Show performance overlay even without OpenCV for basic camera stats
+        if (performanceDisplayManager != null) {
+            performanceDisplayManager.showPerformanceOverlay();
+            performanceDisplayManager.reset(); // Show empty stats initially
+            Log.d(TAG, "Performance overlay shown without OpenCV processing");
+        }
     }
     
     @Override
@@ -834,6 +853,17 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         if (isOpenCVInitialized && frameProcessor != null && !frameProcessor.isProcessing()) {
             Log.d(TAG, "Restarting frame processor on resume");
             frameProcessor.start();
+        }
+        
+        // Restart performance monitoring if not already running
+        if (performanceMetricsCollector != null && isOpenCVInitialized) {
+            performanceMetricsCollector.startMonitoring();
+            Log.d(TAG, "Performance monitoring restarted on resume");
+        }
+        
+        // Update performance display manager lifecycle
+        if (performanceDisplayManager != null) {
+            performanceDisplayManager.onResume();
         }
         
         // Restart camera preview if it was stopped and we have permissions
@@ -868,6 +898,17 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         if (frameProcessor != null && frameProcessor.isProcessing()) {
             Log.d(TAG, "Stopping frame processor due to app backgrounding");
             frameProcessor.stop();
+        }
+        
+        // Stop performance monitoring to save resources
+        if (performanceMetricsCollector != null) {
+            performanceMetricsCollector.stopMonitoring();
+            Log.d(TAG, "Performance monitoring stopped due to app backgrounding");
+        }
+        
+        // Update performance display manager lifecycle
+        if (performanceDisplayManager != null) {
+            performanceDisplayManager.onPause();
         }
     }
     
@@ -1004,6 +1045,18 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             Log.d(TAG, "Camera initialized, starting preview");
             if (cameraManager.startPreview()) {
                 Log.i(TAG, "Camera preview started successfully");
+                
+                // Start performance monitoring when camera preview starts
+                if (performanceMetricsCollector != null && isOpenCVInitialized) {
+                    performanceMetricsCollector.startMonitoring();
+                    Log.d(TAG, "Performance monitoring started with camera preview");
+                }
+                
+                // Show performance overlay for debugging
+                if (performanceDisplayManager != null) {
+                    performanceDisplayManager.showPerformanceOverlay();
+                    Log.d(TAG, "Performance overlay shown with camera preview");
+                }
             } else {
                 Log.e(TAG, "Failed to start camera preview");
                 Toast.makeText(this, "Failed to start camera preview", Toast.LENGTH_LONG).show();
@@ -1115,6 +1168,60 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             config.maxProcessingTimeMs = adjustment.maxProcessingTimeMs;
             
             openCVProcessor.setProcessingConfig(config);
+        }
+    }
+    
+    /**
+     * Initialize OpenCV with system libraries
+     * Attempts to load OpenCV from system libraries first, then falls back to OpenCV Manager
+     */
+    private void initializeOpenCVWithSystemLibraries() {
+        Log.d(TAG, "Initializing OpenCV with system libraries");
+        
+        if (!OpenCVLoader.initDebug()) {
+            Log.d(TAG, "Internal OpenCV library not found. Using OpenCV Manager for initialization");
+            OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION, this, openCVLoaderCallback);
+        } else {
+            Log.d(TAG, "OpenCV library found inside package. Using it!");
+            openCVLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
+        }
+    }
+    
+    /**
+     * Run Android 10 compliance tests on resume
+     */
+    private void runAndroid10ComplianceTests() {
+        if (complianceValidator != null) {
+            Log.d(TAG, "Running Android 10 compliance tests on resume");
+            
+            // Run compliance validation in background thread to avoid blocking UI
+            new Thread(() -> {
+                Android10ComplianceValidator.ComplianceResult result = complianceValidator.validateCompliance();
+                Log.d(TAG, "Android 10 compliance test result: " + result.summary);
+                
+                if (!result.isCompliant) {
+                    Log.w(TAG, "Android 10 compliance issues detected on resume");
+                    for (Android10ComplianceValidator.ComplianceIssue issue : result.issues) {
+                        Log.w(TAG, "  " + issue.toString());
+                    }
+                }
+            }).start();
+        }
+    }
+    
+    /**
+     * Test camera privacy controls for Android 10 compliance
+     */
+    private void testCameraPrivacyControls() {
+        if (complianceValidator != null) {
+            Log.d(TAG, "Testing camera privacy controls");
+            
+            // Test camera privacy controls in background thread
+            new Thread(() -> {
+                boolean privacyCompliance = complianceValidator.testCameraPrivacyControls(this);
+                Log.i(TAG, "Camera privacy controls test result: " + 
+                        (privacyCompliance ? "PASSED" : "FAILED"));
+            }).start();
         }
     }
     
