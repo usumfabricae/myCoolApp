@@ -1832,14 +1832,6 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             return false;
         }
     }
-}  
-          return true;
-            
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to extract and load " + libraryFileName + " from assets", e);
-            return false;
-        }
-    }
     
     // ========== LIFECYCLE METHODS ==========
     
@@ -1963,5 +1955,7 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         }
         
         Log.i(TAG, "MainActivity destroyed - all resources released");
+        
+        super.onDestroy();
     }
 }
