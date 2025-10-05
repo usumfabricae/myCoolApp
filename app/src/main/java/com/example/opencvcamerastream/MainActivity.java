@@ -920,9 +920,6 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         // The permission handler will show the rationale dialog
     }
     
-    // Camera components
-    private com.example.opencvcamerastream.camera.CameraManager cameraManager;
-    
     /**
      * Initialize camera components after permission is granted
      */
