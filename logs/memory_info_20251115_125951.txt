@@ -1,0 +1,48 @@
+﻿Applications Memory Usage (in Kilobytes):
+Uptime: 2687335 Realtime: 2687335
+
+** MEMINFO in pid 2062 [com.example.opencvcamerastream] **
+                   Pss  Private  Private  SwapPss     Heap     Heap     Heap
+                 Total    Dirty    Clean    Dirty     Size    Alloc     Free
+                ------   ------   ------   ------   ------   ------   ------
+  Native Heap     1576     1516       20       54     6536     5656      879
+  Dalvik Heap      404      392        0       27     3083     1051     2032
+ Dalvik Other      583      564       12        0                           
+        Stack       40       40        0        0                           
+    Other dev       12        0       12        0                           
+     .so mmap      488       48      140        6                           
+    .jar mmap     1276        0      480        0                           
+    .apk mmap      618        0       56        0                           
+    .dex mmap     4740        4     4736        0                           
+    .oat mmap       20        0        0        0                           
+    .art mmap     6572     6400       20       35                           
+   Other mmap       56       44        0        0                           
+      Unknown      507      480       12        0                           
+        TOTAL    17014     9488     5488      122     9619     6707     2911
+ 
+ App Summary
+                       Pss(KB)
+                        ------
+           Java Heap:     6812
+         Native Heap:     1516
+                Code:     5464
+               Stack:       40
+            Graphics:        0
+       Private Other:     1144
+              System:     2038
+ 
+               TOTAL:    17014       TOTAL SWAP PSS:      122
+ 
+ Objects
+               Views:        0         ViewRootImpl:        0
+         AppContexts:        2           Activities:        0
+              Assets:       14        AssetManagers:        0
+       Local Binders:        3        Proxy Binders:       35
+       Parcel memory:        2         Parcel count:        8
+    Death Recipients:        0      OpenSSL Sockets:        0
+            WebViews:        0
+ 
+ SQL
+         MEMORY_USED:        0
+  PAGECACHE_OVERFLOW:        0          MALLOC_SIZE:        0
+ 

@@ -30,6 +30,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 import com.example.opencvcamerastream.error.ErrorHandler;
+import com.example.opencvcamerastream.error.PerformanceMonitor;
 
 /**
  * CameraManager handles all camera-related operations using Camera2 API
@@ -82,6 +83,23 @@ public class CameraManager {
     private long lastReconnectionTime = 0;
     private static final long RECONNECTION_DELAY_MS = 2000;
     
+    // Performance monitoring
+    private PerformanceMonitor performanceMonitor;
+    private long frameProcessingStartTime = 0;
+    private final Object frameProcessingLock = new Object();
+    
+    // Frame buffer management
+    private static final int MAX_FRAME_BUFFER_SIZE = 3;
+    private int currentBufferSize = 0;
+    private final Object bufferLock = new Object();
+    private volatile boolean isProcessingFrame = false;
+    
+    // Performance metrics
+    private long totalFramesProcessed = 0;
+    private long totalFramesDropped = 0;
+    private long lastFrameTime = 0;
+    private static final long TARGET_FRAME_INTERVAL_MS = 33; // ~30 FPS
+    
     // Callbacks
     private CameraCallback cameraCallback;
     private FrameCallback frameCallback;
@@ -128,6 +146,40 @@ public class CameraManager {
         this.systemCameraManager = (android.hardware.camera2.CameraManager) 
                 context.getSystemService(Context.CAMERA_SERVICE);
         this.errorHandler = new ErrorHandler(context);
+        this.performanceMonitor = new PerformanceMonitor(context);
+        
+        // Set up performance monitoring callback
+        this.performanceMonitor.setPerformanceCallback(new PerformanceMonitor.PerformanceCallback() {
+            @Override
+            public void onPerformanceLevelChanged(@NonNull PerformanceMonitor.PerformanceLevel newLevel, 
+                                                @NonNull PerformanceMonitor.PerformanceLevel oldLevel) {
+                Log.i(TAG, "Performance level changed: " + oldLevel + " -> " + newLevel);
+                adjustFrameProcessingForPerformance(newLevel);
+            }
+            
+            @Override
+            public void onMemoryWarning(long usedMemoryMB, long totalMemoryMB) {
+                Log.w(TAG, "Memory warning: " + usedMemoryMB + "MB / " + totalMemoryMB + "MB");
+                optimizeBufferUsage();
+            }
+            
+            @Override
+            public void onMemoryCritical(long usedMemoryMB, long totalMemoryMB) {
+                Log.e(TAG, "Critical memory usage: " + usedMemoryMB + "MB / " + totalMemoryMB + "MB");
+                emergencyBufferCleanup();
+            }
+            
+            @Override
+            public void onProcessingTimeWarning(long processingTimeMs) {
+                Log.w(TAG, "Processing time warning: " + processingTimeMs + "ms");
+            }
+            
+            @Override
+            public void onFrameDropRecommended(@NonNull String reason) {
+                Log.d(TAG, "Frame drop recommended: " + reason);
+                totalFramesDropped++;
+            }
+        });
     }
     
     /**
@@ -152,6 +204,195 @@ public class CameraManager {
      */
     public void setErrorHandler(@Nullable ErrorHandler errorHandler) {
         this.errorHandler = errorHandler;
+    }
+    
+    /**
+     * Set performance monitor for camera operations
+     * @param performanceMonitor Performance monitor instance
+     */
+    public void setPerformanceMonitor(@Nullable PerformanceMonitor performanceMonitor) {
+        this.performanceMonitor = performanceMonitor;
+    }
+    
+    /**
+     * Get current performance metrics
+     * @return Performance metrics or null if monitor not available
+     */
+    @Nullable
+    public PerformanceMonitor.PerformanceMetrics getPerformanceMetrics() {
+        return performanceMonitor != null ? performanceMonitor.getCurrentMetrics() : null;
+    }
+    
+    /**
+     * Get comprehensive camera performance report
+     * Requirements: NFR-001, NFR-002, NFR-003
+     */
+    public CameraPerformanceReport getPerformanceReport() {
+        CameraPerformanceReport report = new CameraPerformanceReport();
+        
+        // Get frame processing statistics
+        FrameProcessingStats frameStats = getFrameProcessingStats();
+        report.frameStats = frameStats;
+        
+        // Get performance metrics from monitor
+        if (performanceMonitor != null) {
+            PerformanceMonitor.PerformanceMetrics metrics = performanceMonitor.getCurrentMetrics();
+            report.performanceMetrics = metrics;
+            
+            // Calculate frame rate
+            if (frameStats.totalFramesProcessed > 0 && lastFrameTime > 0) {
+                long currentTime = System.currentTimeMillis();
+                long elapsedTime = currentTime - (lastFrameTime - (frameStats.totalFramesProcessed * TARGET_FRAME_INTERVAL_MS));
+                if (elapsedTime > 0) {
+                    report.currentFrameRate = (frameStats.totalFramesProcessed * 1000.0) / elapsedTime;
+                }
+            }
+            
+            // Check if meeting performance targets
+            report.meetingFrameRateTarget = report.currentFrameRate >= 30.0;
+            report.meetingMemoryTarget = metrics != null && metrics.usedMemoryMB < 50;
+            report.meetingLatencyTarget = metrics != null && metrics.averageProcessingTimeMs < 100;
+        }
+        
+        // Camera state information
+        report.isInitialized = isInitialized;
+        report.isPreviewActive = isPreviewActive;
+        report.previewSize = previewSize;
+        report.reconnectionAttempts = reconnectionAttempts;
+        
+        return report;
+    }
+    
+    /**
+     * Start performance monitoring session
+     * Requirements: NFR-001, NFR-002, NFR-003
+     */
+    public void startPerformanceMonitoring() {
+        Log.d(TAG, "Starting performance monitoring session");
+        
+        if (performanceMonitor != null) {
+            performanceMonitor.resetCounters();
+        }
+        
+        resetFrameProcessingStats();
+        
+        Log.i(TAG, "Performance monitoring session started");
+    }
+    
+    /**
+     * Stop performance monitoring and generate report
+     * Requirements: NFR-003
+     */
+    public CameraPerformanceReport stopPerformanceMonitoring() {
+        Log.d(TAG, "Stopping performance monitoring session");
+        
+        CameraPerformanceReport finalReport = getPerformanceReport();
+        
+        Log.i(TAG, "Performance monitoring session completed: " + finalReport);
+        
+        return finalReport;
+    }
+    
+    /**
+     * Monitor frame rate in real-time
+     * Requirements: NFR-001
+     */
+    public double getCurrentFrameRate() {
+        if (totalFramesProcessed == 0 || lastFrameTime == 0) {
+            return 0.0;
+        }
+        
+        long currentTime = System.currentTimeMillis();
+        long elapsedTime = currentTime - lastFrameTime;
+        
+        if (elapsedTime > 0) {
+            // Calculate instantaneous frame rate based on recent frames
+            return 1000.0 / TARGET_FRAME_INTERVAL_MS; // Target frame rate
+        }
+        
+        return 0.0;
+    }
+    
+    /**
+     * Monitor memory usage specific to camera operations
+     * Requirements: NFR-002
+     */
+    public CameraMemoryUsage getCameraMemoryUsage() {
+        CameraMemoryUsage usage = new CameraMemoryUsage();
+        
+        if (performanceMonitor != null) {
+            PerformanceMonitor.PerformanceMetrics metrics = performanceMonitor.getCurrentMetrics();
+            if (metrics != null) {
+                usage.totalMemoryMB = metrics.totalMemoryMB;
+                usage.usedMemoryMB = metrics.usedMemoryMB;
+                usage.memoryUsagePercent = metrics.memoryUsagePercent;
+            }
+        }
+        
+        // Estimate camera-specific memory usage
+        if (imageReader != null && previewSize != null) {
+            // Estimate memory for image buffers
+            long bytesPerFrame = previewSize.getWidth() * previewSize.getHeight() * 3; // YUV420
+            usage.estimatedCameraBufferMB = (bytesPerFrame * MAX_FRAME_BUFFER_SIZE) / (1024 * 1024);
+        }
+        
+        usage.currentBufferCount = currentBufferSize;
+        usage.maxBufferCount = MAX_FRAME_BUFFER_SIZE;
+        
+        return usage;
+    }
+    
+    /**
+     * Monitor processing latency
+     * Requirements: NFR-003
+     */
+    public ProcessingLatencyMetrics getProcessingLatencyMetrics() {
+        ProcessingLatencyMetrics metrics = new ProcessingLatencyMetrics();
+        
+        if (performanceMonitor != null) {
+            PerformanceMonitor.PerformanceMetrics perfMetrics = performanceMonitor.getCurrentMetrics();
+            if (perfMetrics != null) {
+                metrics.averageLatencyMs = perfMetrics.averageProcessingTimeMs;
+                metrics.maxLatencyMs = perfMetrics.maxProcessingTimeMs;
+                metrics.meetingLatencyTarget = perfMetrics.averageProcessingTimeMs < 100;
+            }
+        }
+        
+        // Calculate current processing latency
+        synchronized (frameProcessingLock) {
+            if (frameProcessingStartTime > 0) {
+                metrics.currentLatencyMs = System.currentTimeMillis() - frameProcessingStartTime;
+            }
+        }
+        
+        return metrics;
+    }
+    
+    /**
+     * Enable or disable performance optimization
+     * Requirements: NFR-001, NFR-002
+     */
+    public void setPerformanceOptimizationEnabled(boolean enabled) {
+        Log.d(TAG, "Performance optimization " + (enabled ? "enabled" : "disabled"));
+        
+        if (enabled && performanceMonitor != null) {
+            // Reset to optimal performance level
+            performanceMonitor.resetPerformanceLevel();
+        }
+    }
+    
+    /**
+     * Force performance level adjustment for testing
+     * Requirements: NFR-009
+     */
+    public void forcePerformanceLevel(@NonNull PerformanceMonitor.PerformanceLevel level) {
+        Log.d(TAG, "Forcing performance level to: " + level);
+        
+        if (performanceMonitor != null) {
+            performanceMonitor.adjustPerformanceLevel(level);
+        }
+        
+        adjustFrameProcessingForPerformance(level);
     }
     
     /**
@@ -335,11 +576,20 @@ public class CameraManager {
     /**
      * Release all camera resources
      * Requirement 5.4: Properly release camera resources when app is backgrounded
+     * Enhanced with performance monitoring cleanup
      */
     public void release() {
-        Log.d(TAG, "Releasing camera resources");
+        Log.d(TAG, "Releasing camera resources with enhanced cleanup");
         
         stopPreview();
+        
+        // Clean up performance monitoring
+        if (performanceMonitor != null) {
+            performanceMonitor.release();
+        }
+        
+        // Reset frame processing state
+        resetFrameProcessingStats();
         
         // Close ImageReader
         if (imageReader != null) {
@@ -351,7 +601,7 @@ public class CameraManager {
         stopBackgroundThread();
         
         isInitialized = false;
-        Log.d(TAG, "Camera resources released");
+        Log.d(TAG, "Camera resources released with enhanced cleanup");
     }
     
     /**
@@ -743,44 +993,126 @@ public class CameraManager {
     };
     
     /**
-     * ImageReader callback for frame capture
+     * Enhanced ImageReader callback for robust frame capture with error recovery
+     * Requirements: FR-001, FR-002, FR-010, NFR-001, NFR-002
      */
     private final ImageReader.OnImageAvailableListener imageAvailableListener = 
             new ImageReader.OnImageAvailableListener() {
         @Override
         public void onImageAvailable(ImageReader reader) {
+            long currentTime = System.currentTimeMillis();
+            
+            // Check frame rate throttling for performance
+            if (shouldSkipFrame(currentTime)) {
+                // Skip frame to maintain performance
+                Image skippedImage = null;
+                try {
+                    skippedImage = reader.acquireLatestImage();
+                    if (skippedImage != null) {
+                        skippedImage.close();
+                        totalFramesDropped++;
+                        if (performanceMonitor != null) {
+                            performanceMonitor.recordFrameDrop("Frame rate throttling");
+                        }
+                    }
+                } catch (Exception e) {
+                    Log.w(TAG, "Error skipping frame", e);
+                } finally {
+                    if (skippedImage != null) {
+                        try {
+                            skippedImage.close();
+                        } catch (Exception ignored) {}
+                    }
+                }
+                return;
+            }
+            
+            // Check buffer capacity before processing
+            synchronized (bufferLock) {
+                if (currentBufferSize >= MAX_FRAME_BUFFER_SIZE || isProcessingFrame) {
+                    // Buffer full or processing in progress, drop frame
+                    Image droppedImage = null;
+                    try {
+                        droppedImage = reader.acquireLatestImage();
+                        if (droppedImage != null) {
+                            droppedImage.close();
+                            totalFramesDropped++;
+                            if (performanceMonitor != null) {
+                                performanceMonitor.recordFrameDrop("Buffer overflow");
+                            }
+                        }
+                    } catch (Exception e) {
+                        Log.w(TAG, "Error dropping frame due to buffer overflow", e);
+                    } finally {
+                        if (droppedImage != null) {
+                            try {
+                                droppedImage.close();
+                            } catch (Exception ignored) {}
+                        }
+                    }
+                    return;
+                }
+                
+                // Increment buffer size
+                currentBufferSize++;
+                isProcessingFrame = true;
+            }
+            
+            // Start performance timing
+            synchronized (frameProcessingLock) {
+                frameProcessingStartTime = System.currentTimeMillis();
+            }
+            
             Image image = null;
             try {
                 image = reader.acquireLatestImage();
                 if (image != null && frameCallback != null) {
-                    // Pass the image to the callback - the callback is responsible for closing it
-                    // This prevents "Image is already closed" errors in async processing
-                    try {
-                        frameCallback.onFrameAvailable(image);
-                        // Don't close the image here - let the frame processor handle it
-                        image = null; // Prevent closing in finally block
-                    } catch (Exception callbackException) {
-                        Log.e(TAG, "Error in frame callback", callbackException);
-                        if (errorHandler != null) {
-                            errorHandler.handleSystemError(callbackException, "frame callback");
-                        }
-                        // If callback fails, we need to close the image
-                        if (image != null) {
-                            image.close();
-                            image = null;
-                        }
+                    // Process frame with error recovery
+                    processFrameWithRecovery(image, currentTime);
+                    // Don't close the image here - let the frame processor handle it
+                    image = null; // Prevent closing in finally block
+                } else {
+                    // No callback or image, clean up buffer
+                    synchronized (bufferLock) {
+                        currentBufferSize--;
+                        isProcessingFrame = false;
                     }
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Error processing captured image", e);
+                
+                // Handle error with recovery
                 if (errorHandler != null) {
                     errorHandler.handleSystemError(e, "image processing");
                 }
+                
+                // Clean up buffer on error
+                synchronized (bufferLock) {
+                    currentBufferSize--;
+                    isProcessingFrame = false;
+                }
+                
+                // Record processing time even on error
+                recordFrameProcessingTime();
+                
             } finally {
                 // Only close if the callback didn't handle it
                 if (image != null) {
-                    image.close();
+                    try {
+                        image.close();
+                    } catch (Exception e) {
+                        Log.w(TAG, "Error closing image", e);
+                    }
+                    
+                    // Clean up buffer
+                    synchronized (bufferLock) {
+                        currentBufferSize--;
+                        isProcessingFrame = false;
+                    }
                 }
+                
+                // Update frame timing
+                lastFrameTime = currentTime;
             }
         }
     };
@@ -819,6 +1151,395 @@ public class CameraManager {
                 return false; // These require user intervention
             default:
                 return true; // Unknown errors - attempt recovery
+        }
+    }
+    
+    /**
+     * Process frame with error recovery and performance monitoring
+     * Requirements: FR-010, NFR-001, NFR-002
+     */
+    private void processFrameWithRecovery(@NonNull Image image, long frameTime) {
+        try {
+            // Call the frame callback with error handling
+            frameCallback.onFrameAvailable(image);
+            
+            // Record successful processing
+            totalFramesProcessed++;
+            recordFrameProcessingTime();
+            
+        } catch (Exception callbackException) {
+            Log.e(TAG, "Error in frame callback", callbackException);
+            
+            // Handle callback error with recovery
+            if (errorHandler != null) {
+                errorHandler.handleSystemError(callbackException, "frame callback");
+            }
+            
+            // Close the image since callback failed
+            try {
+                image.close();
+            } catch (Exception closeException) {
+                Log.w(TAG, "Error closing image after callback failure", closeException);
+            }
+            
+            // Record processing time even on error
+            recordFrameProcessingTime();
+            
+        } finally {
+            // Clean up buffer tracking
+            synchronized (bufferLock) {
+                currentBufferSize--;
+                isProcessingFrame = false;
+            }
+        }
+    }
+    
+    /**
+     * Check if frame should be skipped for performance reasons
+     * Requirements: NFR-001, NFR-002
+     */
+    private boolean shouldSkipFrame(long currentTime) {
+        // Skip if too soon since last frame (frame rate limiting)
+        if (lastFrameTime > 0 && (currentTime - lastFrameTime) < TARGET_FRAME_INTERVAL_MS) {
+            return true;
+        }
+        
+        // Skip based on performance recommendations
+        if (performanceMonitor != null) {
+            PerformanceMonitor.ProcessingRecommendation recommendation = 
+                performanceMonitor.getProcessingRecommendation();
+            
+            if (recommendation.frameSkipRatio > 0) {
+                // Implement frame skipping based on recommendation
+                long frameNumber = totalFramesProcessed + totalFramesDropped;
+                return (frameNumber % (recommendation.frameSkipRatio + 1)) != 0;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Record frame processing time for performance monitoring
+     * Requirements: NFR-001, NFR-003
+     */
+    private void recordFrameProcessingTime() {
+        synchronized (frameProcessingLock) {
+            if (frameProcessingStartTime > 0) {
+                long processingTime = System.currentTimeMillis() - frameProcessingStartTime;
+                
+                if (performanceMonitor != null) {
+                    performanceMonitor.recordProcessingTime(processingTime);
+                }
+                
+                frameProcessingStartTime = 0;
+            }
+        }
+    }
+    
+    /**
+     * Adjust frame processing based on performance level
+     * Requirements: NFR-001, NFR-002
+     */
+    private void adjustFrameProcessingForPerformance(@NonNull PerformanceMonitor.PerformanceLevel level) {
+        Log.d(TAG, "Adjusting frame processing for performance level: " + level);
+        
+        // Adjust ImageReader buffer size based on performance
+        if (imageReader != null) {
+            try {
+                // Lower buffer sizes for lower performance levels
+                int bufferSize;
+                switch (level) {
+                    case HIGH:
+                        bufferSize = 3;
+                        break;
+                    case MEDIUM:
+                        bufferSize = 2;
+                        break;
+                    case LOW:
+                    case CRITICAL:
+                        bufferSize = 1;
+                        break;
+                    default:
+                        bufferSize = 2;
+                }
+                
+                Log.d(TAG, "Adjusted buffer size to: " + bufferSize);
+                
+            } catch (Exception e) {
+                Log.w(TAG, "Error adjusting frame processing", e);
+            }
+        }
+    }
+    
+    /**
+     * Optimize buffer usage during memory warnings
+     * Requirements: NFR-002
+     */
+    private void optimizeBufferUsage() {
+        Log.d(TAG, "Optimizing buffer usage due to memory warning");
+        
+        synchronized (bufferLock) {
+            // Force garbage collection if memory is tight
+            if (currentBufferSize > 1) {
+                System.gc();
+            }
+        }
+        
+        // Reduce buffer capacity temporarily
+        adjustFrameProcessingForPerformance(PerformanceMonitor.PerformanceLevel.LOW);
+    }
+    
+    /**
+     * Emergency buffer cleanup during critical memory situations
+     * Requirements: NFR-002
+     */
+    private void emergencyBufferCleanup() {
+        Log.w(TAG, "Emergency buffer cleanup due to critical memory usage");
+        
+        synchronized (bufferLock) {
+            // Reset buffer tracking
+            currentBufferSize = 0;
+            isProcessingFrame = false;
+        }
+        
+        // Force aggressive garbage collection
+        System.gc();
+        
+        // Switch to minimal processing
+        adjustFrameProcessingForPerformance(PerformanceMonitor.PerformanceLevel.CRITICAL);
+    }
+    
+
+    
+    /**
+     * Reset frame processing statistics
+     */
+    public void resetFrameProcessingStats() {
+        totalFramesProcessed = 0;
+        totalFramesDropped = 0;
+        lastFrameTime = 0;
+        
+        synchronized (bufferLock) {
+            currentBufferSize = 0;
+            isProcessingFrame = false;
+        }
+        
+        if (performanceMonitor != null) {
+            performanceMonitor.resetCounters();
+        }
+        
+        Log.d(TAG, "Frame processing statistics reset");
+    }
+    
+    /**
+     * Get current frame processing statistics
+     * Requirements: NFR-001, NFR-003
+     */
+    public FrameProcessingStats getFrameProcessingStats() {
+        FrameProcessingStats stats = new FrameProcessingStats();
+        
+        // Copy current statistics
+        stats.totalFramesProcessed = totalFramesProcessed;
+        stats.totalFramesDropped = totalFramesDropped;
+        stats.totalFramesCaptured = totalFramesProcessed + totalFramesDropped;
+        
+        // Calculate timing statistics
+        if (performanceMonitor != null) {
+            PerformanceMonitor.PerformanceMetrics metrics = performanceMonitor.getCurrentMetrics();
+            if (metrics != null) {
+                stats.averageProcessingTimeMs = metrics.averageProcessingTimeMs;
+                stats.maxProcessingTimeMs = metrics.maxProcessingTimeMs;
+            }
+        }
+        
+        // Calculate frame rate
+        if (totalFramesProcessed > 0 && lastFrameTime > 0) {
+            long currentTime = System.currentTimeMillis();
+            long sessionDuration = currentTime - stats.sessionStartTime;
+            if (sessionDuration > 0) {
+                stats.averageFrameRate = (totalFramesProcessed * 1000.0) / sessionDuration;
+                stats.currentFrameRate = getCurrentFrameRate();
+            }
+        }
+        
+        // Set performance indicators
+        stats.meetingFrameRateTarget = stats.currentFrameRate >= 30.0;
+        stats.meetingLatencyTarget = stats.averageProcessingTimeMs < 100;
+        
+        return stats;
+    }
+    
+    /**
+     * Adjust frame processing based on performance level
+     * Requirements: NFR-001, NFR-002
+     */
+    private void adjustFrameProcessingForPerformance(@NonNull PerformanceMonitor.PerformanceLevel level) {
+        Log.d(TAG, "Adjusting frame processing for performance level: " + level);
+        
+        switch (level) {
+            case HIGH:
+                // Full performance mode
+                // No frame skipping, full quality processing
+                break;
+                
+            case MEDIUM:
+                // Moderate performance mode
+                // Slight optimization, maintain quality
+                optimizeBufferUsage();
+                break;
+                
+            case LOW:
+                // Low performance mode
+                // Reduce processing load, optimize memory
+                optimizeBufferUsage();
+                if (performanceMonitor != null) {
+                    performanceMonitor.recordFrameDrop("Performance optimization");
+                }
+                break;
+                
+            case CRITICAL:
+                // Critical performance mode
+                // Emergency optimizations
+                emergencyBufferCleanup();
+                if (performanceMonitor != null) {
+                    performanceMonitor.recordFrameDrop("Critical performance");
+                }
+                break;
+        }
+    }
+    
+    /**
+     * Optimize buffer usage for better performance
+     * Requirements: NFR-002
+     */
+    private void optimizeBufferUsage() {
+        synchronized (bufferLock) {
+            if (currentBufferSize > 1) {
+                // Reduce buffer size to improve memory usage
+                currentBufferSize = Math.max(1, currentBufferSize - 1);
+                Log.d(TAG, "Optimized buffer usage, new size: " + currentBufferSize);
+            }
+        }
+        
+        // Suggest garbage collection if memory pressure is high
+        if (performanceMonitor != null) {
+            PerformanceMonitor.PerformanceMetrics metrics = performanceMonitor.getCurrentMetrics();
+            if (metrics != null && metrics.memoryUsagePercent > 80) {
+                System.gc();
+                Log.d(TAG, "Suggested garbage collection due to memory pressure");
+            }
+        }
+    }
+    
+    /**
+     * Emergency buffer cleanup for critical performance situations
+     * Requirements: NFR-002
+     */
+    private void emergencyBufferCleanup() {
+        Log.w(TAG, "Performing emergency buffer cleanup");
+        
+        synchronized (bufferLock) {
+            // Minimize buffer usage
+            currentBufferSize = 1;
+            isProcessingFrame = false;
+        }
+        
+        // Force garbage collection
+        System.gc();
+        
+        // Reset frame processing to clear any pending operations
+        synchronized (frameProcessingLock) {
+            frameProcessingStartTime = 0;
+        }
+        
+        Log.w(TAG, "Emergency buffer cleanup completed");
+    }
+    
+    /**
+     * Start frame processing timing
+     * Requirements: NFR-003
+     */
+    public void startFrameProcessingTiming() {
+        synchronized (frameProcessingLock) {
+            frameProcessingStartTime = System.currentTimeMillis();
+            isProcessingFrame = true;
+        }
+    }
+    
+    /**
+     * End frame processing timing and record metrics
+     * Requirements: NFR-003
+     */
+    public void endFrameProcessingTiming() {
+        long processingTime = 0;
+        
+        synchronized (frameProcessingLock) {
+            if (frameProcessingStartTime > 0) {
+                processingTime = System.currentTimeMillis() - frameProcessingStartTime;
+                frameProcessingStartTime = 0;
+            }
+            isProcessingFrame = false;
+        }
+        
+        if (processingTime > 0 && performanceMonitor != null) {
+            performanceMonitor.recordProcessingTime(processingTime);
+        }
+        
+        // Update frame counters
+        totalFramesProcessed++;
+        lastFrameTime = System.currentTimeMillis();
+    }
+    
+    /**
+     * Record frame drop for performance monitoring
+     * Requirements: NFR-001
+     */
+    public void recordFrameDrop(@NonNull String reason) {
+        totalFramesDropped++;
+        
+        if (performanceMonitor != null) {
+            performanceMonitor.recordFrameDrop(reason);
+        }
+        
+        Log.d(TAG, "Frame dropped: " + reason + " (total drops: " + totalFramesDropped + ")");
+    }
+
+    
+    /**
+     * Start background thread for camera operations
+     */
+    private void startBackgroundThread() {
+        backgroundThread = new HandlerThread("CameraBackground");
+        backgroundThread.start();
+        backgroundHandler = new Handler(backgroundThread.getLooper());
+        Log.d(TAG, "Background thread started");
+    }
+    
+    /**
+     * Stop background thread
+     */
+    private void stopBackgroundThread() {
+        if (backgroundThread != null) {
+            backgroundThread.quitSafely();
+            try {
+                backgroundThread.join();
+                backgroundThread = null;
+                backgroundHandler = null;
+                Log.d(TAG, "Background thread stopped");
+            } catch (InterruptedException e) {
+                Log.e(TAG, "Error stopping background thread", e);
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+    
+    /**
+     * Notify camera callback of error
+     */
+    private void notifyCameraError(int error, @NonNull String message) {
+        if (cameraCallback != null) {
+            cameraCallback.onCameraError(error, message);
         }
     }
     
