@@ -15,9 +15,15 @@ public class FrameProcessingStats {
     
     public long totalFramesProcessed = 0;
     public long totalFramesDropped = 0;
+    public long totalFramesCaptured = 0;
     public long averageProcessingTimeMs = 0;
     public long minProcessingTimeMs = Long.MAX_VALUE;
     public long maxProcessingTimeMs = 0;
+    public long sessionStartTime = 0;
+    public double averageFrameRate = 0.0;
+    public double currentFrameRate = 0.0;
+    public boolean meetingFrameRateTarget = true;
+    public boolean meetingLatencyTarget = true;
     
     private List<Long> processingTimes = new ArrayList<>();
     private static final int MAX_HISTORY_SIZE = 100;
@@ -28,6 +34,7 @@ public class FrameProcessingStats {
      */
     public void recordFrameProcessed(long processingTimeMs) {
         totalFramesProcessed++;
+        totalFramesCaptured = totalFramesProcessed + totalFramesDropped;
         
         // Update min/max
         minProcessingTimeMs = Math.min(minProcessingTimeMs, processingTimeMs);
@@ -45,6 +52,9 @@ public class FrameProcessingStats {
             sum += time;
         }
         averageProcessingTimeMs = sum / processingTimes.size();
+        
+        // Update meeting targets
+        meetingLatencyTarget = averageProcessingTimeMs < 100;
     }
     
     /**

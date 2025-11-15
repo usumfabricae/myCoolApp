@@ -19,6 +19,7 @@ public class ProcessingLatencyMetrics {
     public long minLatencyMs = Long.MAX_VALUE;
     public long maxLatencyMs = 0;
     public int measurementCount = 0;
+    public boolean meetingLatencyTarget = true;
     
     // Target threshold
     private static final long LATENCY_TARGET_MS = 100;
@@ -50,6 +51,9 @@ public class ProcessingLatencyMetrics {
             sum += time;
         }
         averageLatencyMs = sum / latencyHistory.size();
+        
+        // Update meeting target flag
+        meetingLatencyTarget = averageLatencyMs < LATENCY_TARGET_MS;
     }
     
     /**
