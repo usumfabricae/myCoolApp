@@ -1,12 +1,15 @@
 package com.example.opencvcamerastream.camera;
 
-import androidx.annotation.NonNull;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * Processing latency metrics for camera operations
+ * Processing latency metrics tracker
  * 
- * Requirements addressed:
- * - NFR-003: Processing latency measurement (<100ms target)
+ * Tracks frame processing latency including average, min, max,
+ * and current latency measurements.
+ * 
+ * Requirements: NFR-003
  */
 public class ProcessingLatencyMetrics {
     
@@ -15,101 +18,92 @@ public class ProcessingLatencyMetrics {
     public long averageLatencyMs = 0;
     public long minLatencyMs = Long.MAX_VALUE;
     public long maxLatencyMs = 0;
+    public int measurementCount = 0;
     
-    // Performance targets
-    public static final long LATENCY_TARGET_MS = 100;
-    public static final long LATENCY_WARNING_MS = 75;
+    // Target threshold
+    private static final long LATENCY_TARGET_MS = 100;
     
-    // Performance indicators
-    public boolean meetingLatencyTarget = false;
-    
-    // Statistics
-    public long measurementCount = 0;
-    public long totalLatencyMs = 0;
+    private List<Long> latencyHistory = new ArrayList<>();
+    private static final int MAX_HISTORY_SIZE = 100;
     
     /**
-     * Record a new latency measurement
-     * Requirements: NFR-003
+     * Record a latency measurement
+     * @param latencyMs Latency in milliseconds
      */
     public void recordLatency(long latencyMs) {
         currentLatencyMs = latencyMs;
         measurementCount++;
-        totalLatencyMs += latencyMs;
         
         // Update min/max
-        if (latencyMs < minLatencyMs) {
-            minLatencyMs = latencyMs;
-        }
-        if (latencyMs > maxLatencyMs) {
-            maxLatencyMs = latencyMs;
+        minLatencyMs = Math.min(minLatencyMs, latencyMs);
+        maxLatencyMs = Math.max(maxLatencyMs, latencyMs);
+        
+        // Track history for average calculation
+        latencyHistory.add(latencyMs);
+        if (latencyHistory.size() > MAX_HISTORY_SIZE) {
+            latencyHistory.remove(0);
         }
         
         // Calculate average
-        averageLatencyMs = totalLatencyMs / measurementCount;
-        
-        // Check target compliance
-        meetingLatencyTarget = latencyMs < LATENCY_TARGET_MS;
-    }
-    
-    /**
-     * Check if latency is within target
-     * Requirements: NFR-003
-     */
-    public boolean isWithinTarget() {
-        return currentLatencyMs < LATENCY_TARGET_MS;
-    }
-    
-    /**
-     * Check if latency is at warning level
-     * Requirements: NFR-003
-     */
-    public boolean isAtWarningLevel() {
-        return currentLatencyMs >= LATENCY_WARNING_MS && currentLatencyMs < LATENCY_TARGET_MS;
+        long sum = 0;
+        for (long time : latencyHistory) {
+            sum += time;
+        }
+        averageLatencyMs = sum / latencyHistory.size();
     }
     
     /**
      * Check if latency is above target
-     * Requirements: NFR-003
+     * @return true if average latency > 100ms
      */
     public boolean isAboveTarget() {
-        return currentLatencyMs >= LATENCY_TARGET_MS;
+        return averageLatencyMs > LATENCY_TARGET_MS;
     }
     
     /**
-     * Get latency status description
-     */
-    @NonNull
-    public String getLatencyStatus() {
-        if (isAboveTarget()) {
-            return "ABOVE_TARGET";
-        } else if (isAtWarningLevel()) {
-            return "WARNING";
-        } else {
-            return "OPTIMAL";
-        }
-    }
-    
-    /**
-     * Get performance score (0.0 to 1.0)
-     * Requirements: NFR-009
+     * Get performance score based on latency
+     * @return Score from 0.0 to 1.0
      */
     public double getPerformanceScore() {
-        if (currentLatencyMs == 0) {
+        if (averageLatencyMs == 0) {
             return 1.0;
         }
-        
-        // Score based on how close to target we are
-        if (currentLatencyMs <= LATENCY_WARNING_MS) {
-            return 1.0;
-        } else if (currentLatencyMs <= LATENCY_TARGET_MS) {
-            return 0.8;
-        } else if (currentLatencyMs <= LATENCY_TARGET_MS * 1.5) {
-            return 0.6;
-        } else if (currentLatencyMs <= LATENCY_TARGET_MS * 2) {
-            return 0.4;
+        return Math.max(1.0 - (averageLatencyMs / (double) LATENCY_TARGET_MS), 0.0);
+    }
+    
+    /**
+     * Get latency status string
+     * @return Status: OPTIMAL, WARNING, or ABOVE_TARGET
+     */
+    public String getLatencyStatus() {
+        if (averageLatencyMs <= 50) {
+            return "OPTIMAL";
+        } else if (averageLatencyMs <= LATENCY_TARGET_MS) {
+            return "WARNING";
         } else {
-            return 0.2;
+            return "ABOVE_TARGET";
         }
+    }
+    
+    /**
+     * Get latency metrics summary
+     * @return Summary string
+     */
+    public String getLatencyMetricsSummary() {
+        StringBuilder summary = new StringBuilder();
+        
+        summary.append("Processing Latency Metrics\n");
+        summary.append("==========================\n");
+        summary.append("Current Latency: ").append(currentLatencyMs).append("ms\n");
+        summary.append("Average Latency: ").append(averageLatencyMs).append("ms\n");
+        summary.append("Min Latency: ").append(minLatencyMs == Long.MAX_VALUE ? "N/A" : minLatencyMs).append("ms\n");
+        summary.append("Max Latency: ").append(maxLatencyMs).append("ms\n");
+        summary.append("Measurement Count: ").append(measurementCount).append("\n");
+        summary.append("Target: ").append(LATENCY_TARGET_MS).append("ms\n");
+        summary.append("Status: ").append(getLatencyStatus()).append("\n");
+        summary.append("Performance Score: ").append(String.format("%.2f", getPerformanceScore())).append("\n");
+        
+        return summary.toString();
     }
     
     /**
@@ -120,32 +114,17 @@ public class ProcessingLatencyMetrics {
         averageLatencyMs = 0;
         minLatencyMs = Long.MAX_VALUE;
         maxLatencyMs = 0;
-        meetingLatencyTarget = false;
         measurementCount = 0;
-        totalLatencyMs = 0;
-    }
-    
-    /**
-     * Get latency metrics summary
-     */
-    @NonNull
-    public String getLatencyMetricsSummary() {
-        StringBuilder summary = new StringBuilder();
-        summary.append("Processing Latency Metrics:\n");
-        summary.append(String.format("  Current Latency: %d ms\n", currentLatencyMs));
-        summary.append(String.format("  Average Latency: %d ms\n", averageLatencyMs));
-        summary.append(String.format("  Min Latency: %d ms\n", minLatencyMs == Long.MAX_VALUE ? 0 : minLatencyMs));
-        summary.append(String.format("  Max Latency: %d ms\n", maxLatencyMs));
-        summary.append(String.format("  Target: <%d ms - %s\n", LATENCY_TARGET_MS, isWithinTarget() ? "✓" : "✗"));
-        summary.append(String.format("  Status: %s\n", getLatencyStatus()));
-        summary.append(String.format("  Performance Score: %.1f%%\n", getPerformanceScore() * 100));
-        summary.append(String.format("  Measurements: %d\n", measurementCount));
-        return summary.toString();
+        latencyHistory.clear();
     }
     
     @Override
     public String toString() {
-        return String.format("ProcessingLatencyMetrics{current=%dms, avg=%dms, target=%s, score=%.1f%%}", 
-                currentLatencyMs, averageLatencyMs, isWithinTarget() ? "✓" : "✗", getPerformanceScore() * 100);
+        return "ProcessingLatencyMetrics{" +
+                "current=" + currentLatencyMs + "ms" +
+                ", avg=" + averageLatencyMs + "ms" +
+                ", status=" + getLatencyStatus() +
+                ", score=" + String.format("%.2f", getPerformanceScore()) +
+                '}';
     }
 }

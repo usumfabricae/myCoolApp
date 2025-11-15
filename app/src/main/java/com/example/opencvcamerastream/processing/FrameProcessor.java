@@ -53,6 +53,9 @@ public class FrameProcessor {
     private long lastPerformanceLogTime = 0;
     private static final long PERFORMANCE_LOG_INTERVAL = 5000; // Log every 5 seconds
     
+    // Visualization state tracking
+    private final AtomicBoolean isVisualizationEnabled = new AtomicBoolean(true);
+    
     /**
      * Callback interface for processed frames
      */
@@ -477,6 +480,26 @@ public class FrameProcessor {
      */
     public FrameBuffer getFrameBuffer() {
         return frameBuffer;
+    }
+    
+    /**
+     * Set visualization enabled/disabled
+     * Requirement 6.2: Continue processing pipeline when visualization is disabled
+     * 
+     * @param enabled true to enable visualization, false to disable
+     */
+    public void setVisualizationEnabled(boolean enabled) {
+        isVisualizationEnabled.set(enabled);
+        Log.d(TAG, "Visualization " + (enabled ? "enabled" : "disabled") + 
+                " - processing pipeline continues");
+    }
+    
+    /**
+     * Check if visualization is currently enabled
+     * @return true if visualization is enabled, false otherwise
+     */
+    public boolean isVisualizationEnabled() {
+        return isVisualizationEnabled.get();
     }
     
     /**

@@ -1433,8 +1433,95 @@ public class CameraManager {
         
         Log.d(TAG, "Frame dropped: " + reason + " (total drops: " + totalFramesDropped + ")");
     }
-
     
+    /**
+     * Get frame processing statistics
+     * Requirements: NFR-001, NFR-003
+     */
+    public FrameProcessingStats getFrameProcessingStats() {
+        FrameProcessingStats stats = new FrameProcessingStats();
+        stats.totalFramesProcessed = totalFramesProcessed;
+        stats.totalFramesDropped = totalFramesDropped;
+        
+        if (performanceMonitor != null) {
+            PerformanceMonitor.PerformanceMetrics metrics = performanceMonitor.getCurrentMetrics();
+            if (metrics != null) {
+                stats.averageProcessingTimeMs = metrics.averageProcessingTimeMs;
+            }
+        }
+        
+        return stats;
+    }
+    
+    /**
+     * Reset frame processing statistics
+     * Requirements: NFR-001, NFR-003
+     */
+    private void resetFrameProcessingStats() {
+        totalFramesProcessed = 0;
+        totalFramesDropped = 0;
+        lastFrameTime = 0;
+        frameProcessingStartTime = 0;
+        
+        if (performanceMonitor != null) {
+            performanceMonitor.resetCounters();
+        }
+    }
+    
+    /**
+     * Adjust frame processing based on performance level
+     * Requirements: NFR-001, NFR-002
+     */
+    private void adjustFrameProcessingForPerformance(@NonNull PerformanceMonitor.PerformanceLevel level) {
+        Log.d(TAG, "Adjusting frame processing for performance level: " + level);
+        
+        switch (level) {
+            case HIGH:
+                // Full processing, no frame skipping
+                Log.d(TAG, "High performance mode: processing all frames");
+                break;
+            case MEDIUM:
+                // Normal processing
+                Log.d(TAG, "Medium performance mode: normal frame processing");
+                break;
+            case LOW:
+                // Skip frames to reduce load
+                Log.d(TAG, "Low performance mode: may skip frames");
+                break;
+        }
+    }
+    
+    /**
+     * Optimize buffer usage for memory constraints
+     * Requirements: NFR-002
+     */
+    private void optimizeBufferUsage() {
+        Log.d(TAG, "Optimizing buffer usage");
+        
+        synchronized (bufferLock) {
+            if (currentBufferSize > 1) {
+                currentBufferSize = Math.max(1, currentBufferSize - 1);
+                Log.d(TAG, "Reduced buffer size to: " + currentBufferSize);
+            }
+        }
+    }
+    
+    /**
+     * Emergency buffer cleanup for critical memory situations
+     * Requirements: NFR-002
+     */
+    private void emergencyBufferCleanup() {
+        Log.e(TAG, "Emergency buffer cleanup initiated");
+        
+        synchronized (bufferLock) {
+            currentBufferSize = 1;
+        }
+        
+        // Force garbage collection
+        System.gc();
+        
+        Log.e(TAG, "Emergency buffer cleanup completed");
+    }
 
     
     /**

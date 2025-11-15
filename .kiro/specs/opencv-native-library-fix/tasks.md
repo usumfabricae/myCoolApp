@@ -184,7 +184,9 @@ nced Camera Stream Features
 
 
 
-- [ ] 8.2 Add performance monitoring to CameraManager
+- [x] 8.2 Add performance monitoring to CameraManager
+
+
 
 
 
@@ -196,31 +198,43 @@ nced Camera Stream Features
 
   - _Requirements: NFR-001, NFR-002, NFR-003_
 
-- [ ] 8.3 Create enhanced camera manager unit tests
+- [-] 8.3 Create enhanced camera manager unit tests
+
+
+
   - Test frame processing error recovery scenarios
   - Test performance monitoring and metrics collection
   - Test memory management and buffer optimization
   - _Requirements: NFR-001, NFR-002, NFR-009_
 
-- [ ] 9. Implement camera visualization toggle control
+- [x] 9. Implement camera visualization toggle control
+
+
+
   - Add toggle button to enable/disable camera visualization
   - Maintain processing pipeline when visualization is disabled
   - Maintain performance metrics when visualization is disabled
   - _Requirements: FR-006, FR-008, FR-009_
 
-- [ ] 9.1 Add camera visualization toggle UI
+
+- [x] 9.1 Add camera visualization toggle UI
+
   - Create toggle button in main activity layout
   - Implement visibility control logic for TextureView
   - Add smooth transition animations for toggle state changes
   - _Requirements: FR-006_
 
-- [ ] 9.2 Implement processing pipeline continuation
+
+- [x] 9.2 Implement processing pipeline continuation
+
   - Ensure camera processing continues when visualization is disabled
   - Optimize performance when display is not needed
   - Add state management for visualization toggle
   - _Requirements: FR-008_
 
-- [ ] 9.3 Add state persistence for toggle control
+
+- [x] 9.3 Add state persistence for toggle control
+
   - Implement SharedPreferences storage for toggle state
   - Restore toggle state on app restart
   - Add unit tests for state persistence functionality

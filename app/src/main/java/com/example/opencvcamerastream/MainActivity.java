@@ -9,6 +9,9 @@ import android.widget.Spinner;
 import android.widget.ArrayAdapter;
 import android.view.View;
 import android.widget.AdapterView;
+import android.widget.ToggleButton;
+import android.widget.Button;
+import android.widget.TextureView;
 import com.example.opencvcamerastream.permissions.PermissionHandler;
 import com.example.opencvcamerastream.processing.OpenCVProcessor;
 import com.example.opencvcamerastream.processing.FrameProcessor;
@@ -47,6 +50,13 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
     // Processing mode selection
     private Spinner processingModeSpinner;
     private ArrayAdapter<String> processingModeAdapter;
+    
+    // UI Controls for camera visualization and rotation
+    private ToggleButton toggleCameraVisualization;
+    private Button btnRotateCamera;
+    private TextureView textureView;
+    private boolean isVisualizationEnabled = true;
+    private int currentRotation = 0; // 0, 90, 180, 270
     
     // Additional components referenced in the code
     private com.example.opencvcamerastream.processing.FrameProcessor frameProcessor;
@@ -90,6 +100,9 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         
         // Initialize Android 10 compliance validation
         initializeAndroid10Compliance();
+        
+        // Initialize UI controls for camera visualization and rotation
+        initializeUIControls();
         
         // TODO: Set up Camera2 API with privacy controls (Task 4)
     }
@@ -595,6 +608,144 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         });
         
         Log.d(TAG, "Processing mode selection initialized");
+    }
+    
+    /**
+     * Initialize UI controls for camera visualization toggle and rotation
+     * Requirement 6: Camera visualization control
+     * Requirement 7: Camera rotation control
+     */
+    private void initializeUIControls() {
+        Log.d(TAG, "Initializing UI controls for camera visualization and rotation");
+        
+        // Get references to UI controls
+        toggleCameraVisualization = findViewById(R.id.toggleCameraVisualization);
+        btnRotateCamera = findViewById(R.id.btnRotateCamera);
+        textureView = findViewById(R.id.textureView);
+        
+        if (toggleCameraVisualization == null) {
+            Log.e(TAG, "Camera visualization toggle button not found in layout");
+            return;
+        }
+        
+        if (btnRotateCamera == null) {
+            Log.e(TAG, "Rotate camera button not found in layout");
+            return;
+        }
+        
+        // Restore saved UI state
+        restoreUIState();
+        
+        // Set up camera visualization toggle listener
+        toggleCameraVisualization.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            isVisualizationEnabled = isChecked;
+            onCameraVisualizationToggled(isChecked);
+        });
+        
+        // Set up rotation button listener
+        btnRotateCamera.setOnClickListener(v -> onRotateButtonClicked());
+        
+        Log.d(TAG, "UI controls initialized successfully");
+    }
+    
+    /**
+     * Handle camera visualization toggle
+     * Requirement 6.1: Toggle camera display visibility
+     * Requirement 6.2: Continue processing pipeline when visualization is disabled
+     */
+    private void onCameraVisualizationToggled(boolean isEnabled) {
+        Log.d(TAG, "Camera visualization toggled: " + (isEnabled ? "SHOWN" : "HIDDEN"));
+        
+        if (textureView != null) {
+            // Animate visibility change
+            textureView.animate()
+                    .alpha(isEnabled ? 1.0f : 0.0f)
+                    .setDuration(300)
+                    .start();
+            
+            // Update visibility after animation
+            textureView.setVisibility(isEnabled ? View.VISIBLE : View.INVISIBLE);
+        }
+        
+        // Update display manager to continue processing
+        if (displayManager != null) {
+            displayManager.setVisualizationEnabled(isEnabled);
+        }
+        
+        // Update frame processor to track visualization state
+        if (frameProcessor != null) {
+            frameProcessor.setVisualizationEnabled(isEnabled);
+        }
+        
+        // Save state
+        saveUIState();
+        
+        // Show feedback
+        String message = isEnabled ? "Camera display shown" : "Camera display hidden";
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+    }
+    
+    /**
+     * Handle rotation button click
+     * Requirement 7.1: Rotate display 90 degrees clockwise
+     * Requirement 7.2: Cycle through 0°, 90°, 180°, 270°
+     */
+    private void onRotateButtonClicked() {
+        // Cycle to next rotation (0 -> 90 -> 180 -> 270 -> 0)
+        currentRotation = (currentRotation + 90) % 360;
+        
+        Log.d(TAG, "Camera display rotated to " + currentRotation + " degrees");
+        
+        // Apply rotation to display
+        if (displayManager != null) {
+            displayManager.rotateDisplay(currentRotation);
+        }
+        
+        // Save state
+        saveUIState();
+        
+        // Show feedback
+        Toast.makeText(this, "Rotated to " + currentRotation + "°", Toast.LENGTH_SHORT).show();
+    }
+    
+    /**
+     * Save UI state to SharedPreferences
+     * Requirement 6.3: Save visualization state
+     * Requirement 7.3: Save rotation state
+     */
+    private void saveUIState() {
+        android.content.SharedPreferences prefs = getSharedPreferences("ui_state", MODE_PRIVATE);
+        android.content.SharedPreferences.Editor editor = prefs.edit();
+        
+        editor.putBoolean("visualization_enabled", isVisualizationEnabled);
+        editor.putInt("rotation_degrees", currentRotation);
+        editor.apply();
+        
+        Log.d(TAG, "UI state saved: visualization=" + isVisualizationEnabled + ", rotation=" + currentRotation);
+    }
+    
+    /**
+     * Restore UI state from SharedPreferences
+     * Requirement 6.3: Restore visualization state on app restart
+     * Requirement 7.3: Restore rotation state on app restart
+     */
+    private void restoreUIState() {
+        android.content.SharedPreferences prefs = getSharedPreferences("ui_state", MODE_PRIVATE);
+        
+        isVisualizationEnabled = prefs.getBoolean("visualization_enabled", true);
+        currentRotation = prefs.getInt("rotation_degrees", 0);
+        
+        // Update UI controls to reflect saved state
+        if (toggleCameraVisualization != null) {
+            toggleCameraVisualization.setChecked(isVisualizationEnabled);
+        }
+        
+        // Apply saved rotation
+        if (displayManager != null) {
+            displayManager.rotateDisplay(currentRotation);
+        }
+        
+        Log.d(TAG, "UI state restored: visualization=" + isVisualizationEnabled + ", rotation=" + currentRotation);
     }
     
     /**

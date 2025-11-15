@@ -10,7 +10,7 @@
         android:id="@+id/textureView"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintBottom_toTopOf="@+id/controlPanel"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
@@ -101,6 +101,38 @@
 
     </LinearLayout>
 
+    <!-- Control Panel with Camera Visualization Toggle and Rotation Button -->
+    <LinearLayout
+        android:id="@+id/controlPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:padding="16dp"
+        android:background="@color/control_panel_background"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <ToggleButton
+            android:id="@+id/toggleCameraVisualization"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textOn="Hide Camera"
+            android:textOff="Show Camera"
+            android:layout_marginEnd="16dp"
+            android:background="@drawable/toggle_button_background" />
+
+        <Button
+            android:id="@+id/btnRotateCamera"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Rotate 90°"
+            android:background="@drawable/button_background"
+            android:layout_marginEnd="16dp" />
+
+    </LinearLayout>
+
     <!-- Performance Toggle Button -->
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/performanceToggleFab"
@@ -108,7 +140,7 @@
         android:layout_height="wrap_content"
         android:layout_margin="16dp"
         android:src="@drawable/ic_performance_24"
-        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintBottom_toTopOf="@+id/controlPanel"
         app:layout_constraintEnd_toEndOf="parent"
         app:fabSize="mini" />
 

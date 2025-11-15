@@ -523,6 +523,84 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
     }
     
     /**
+     * Set camera visualization enabled/disabled
+     * Requirement 6.1: Toggle camera display visibility
+     * Requirement 6.2: Continue processing pipeline when visualization is disabled
+     * 
+     * @param enabled true to show visualization, false to hide
+     */
+    public void setVisualizationEnabled(boolean enabled) {
+        Log.d(TAG, "Setting visualization enabled: " + enabled);
+        
+        if (textureView != null) {
+            textureView.setVisibility(enabled ? android.view.View.VISIBLE : android.view.View.INVISIBLE);
+        }
+        
+        // Note: Processing pipeline continues regardless of visualization state
+        // This is handled by the camera manager and frame processor
+    }
+    
+    /**
+     * Rotate the display by the specified degrees
+     * Requirement 7.1: Rotate display 90 degrees clockwise
+     * Requirement 7.2: Cycle through 0°, 90°, 180°, 270°
+     * 
+     * @param degrees Rotation in degrees (0, 90, 180, 270)
+     */
+    public void rotateDisplay(int degrees) {
+        Log.d(TAG, "Rotating display to " + degrees + " degrees");
+        
+        // Normalize degrees to 0-360 range
+        degrees = degrees % 360;
+        if (degrees < 0) {
+            degrees += 360;
+        }
+        
+        // Update transform matrix with rotation
+        updateTransformMatrixWithRotation(degrees);
+    }
+    
+    /**
+     * Update transform matrix to include rotation
+     * Requirement 7.2: Handle rotation without frame drops
+     * 
+     * @param rotationDegrees Rotation in degrees
+     */
+    private void updateTransformMatrixWithRotation(int rotationDegrees) {
+        if (frameWidth == 0 || frameHeight == 0 || displayWidth == 0 || displayHeight == 0) {
+            Log.w(TAG, "Cannot update transform matrix - invalid dimensions");
+            return;
+        }
+        
+        transformMatrix.reset();
+        
+        // Calculate scaling factors
+        float scaleX = (float) displayWidth / frameWidth;
+        float scaleY = (float) displayHeight / frameHeight;
+        
+        // Use the smaller scale to maintain aspect ratio
+        float scale = Math.min(scaleX, scaleY);
+        
+        // Calculate center point for rotation
+        float centerX = displayWidth / 2f;
+        float centerY = displayHeight / 2f;
+        
+        // Apply rotation around center
+        transformMatrix.postRotate(rotationDegrees, centerX, centerY);
+        
+        // Calculate translation to center the rotated image
+        float translateX = (displayWidth - frameWidth * scale) / 2f;
+        float translateY = (displayHeight - frameHeight * scale) / 2f;
+        
+        // Apply scaling and translation
+        transformMatrix.postScale(scale, scale, centerX, centerY);
+        transformMatrix.postTranslate(translateX, translateY);
+        
+        Log.d(TAG, "Transform matrix updated with rotation: " + rotationDegrees + 
+                " degrees, scale: " + scale);
+    }
+    
+    /**
      * Release display resources completely
      * Called during activity destruction
      */

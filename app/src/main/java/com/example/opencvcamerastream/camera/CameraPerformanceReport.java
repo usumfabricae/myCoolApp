@@ -1,7 +1,7 @@
 package com.example.opencvcamerastream.camera;
 
 import android.util.Size;
-import androidx.annotation.NonNull;
+
 import androidx.annotation.Nullable;
 
 import com.example.opencvcamerastream.error.PerformanceMonitor;
@@ -9,98 +9,107 @@ import com.example.opencvcamerastream.error.PerformanceMonitor;
 /**
  * Comprehensive camera performance report
  * 
- * Requirements addressed:
- * - NFR-001: Frame rate monitoring (30 FPS target)
- * - NFR-002: Memory usage tracking (<50 MB target)
- * - NFR-003: Processing latency measurement (<100ms target)
+ * Aggregates frame processing statistics, memory usage, and latency metrics
+ * to provide a complete view of camera system performance.
+ * 
+ * Requirements: NFR-001, NFR-002, NFR-003
  */
 public class CameraPerformanceReport {
     
     // Frame processing statistics
-    @Nullable
     public FrameProcessingStats frameStats;
     
     // Performance metrics from monitor
     @Nullable
     public PerformanceMonitor.PerformanceMetrics performanceMetrics;
     
-    // Current frame rate
+    // Calculated metrics
     public double currentFrameRate = 0.0;
-    
-    // Performance target compliance
     public boolean meetingFrameRateTarget = false;
     public boolean meetingMemoryTarget = false;
     public boolean meetingLatencyTarget = false;
     
-    // Camera state information
+    // Camera state
     public boolean isInitialized = false;
     public boolean isPreviewActive = false;
     @Nullable
     public Size previewSize;
     public int reconnectionAttempts = 0;
     
-    // Timestamps
+    // Report metadata
     public long reportGeneratedAt = System.currentTimeMillis();
-    public long sessionStartTime = 0;
-    
-    /**
-     * Check if all performance targets are being met
-     * Requirements: NFR-001, NFR-002, NFR-003
-     */
-    public boolean isPerformanceOptimal() {
-        return meetingFrameRateTarget && meetingMemoryTarget && meetingLatencyTarget;
-    }
     
     /**
      * Get overall performance score (0.0 to 1.0)
-     * Requirements: NFR-009
+     * @return Performance score
      */
     public double getPerformanceScore() {
-        int targetsMetCount = 0;
-        int totalTargets = 3;
+        double score = 0.0;
+        int factors = 0;
         
-        if (meetingFrameRateTarget) targetsMetCount++;
-        if (meetingMemoryTarget) targetsMetCount++;
-        if (meetingLatencyTarget) targetsMetCount++;
+        // Frame rate score (30 FPS target)
+        if (currentFrameRate > 0) {
+            score += Math.min(currentFrameRate / 30.0, 1.0);
+            factors++;
+        }
         
-        return (double) targetsMetCount / totalTargets;
+        // Memory score (50 MB target)
+        if (performanceMetrics != null && performanceMetrics.usedMemoryMB > 0) {
+            score += Math.max(1.0 - (performanceMetrics.usedMemoryMB / 50.0), 0.0);
+            factors++;
+        }
+        
+        // Latency score (100ms target)
+        if (performanceMetrics != null && performanceMetrics.averageProcessingTimeMs > 0) {
+            score += Math.max(1.0 - (performanceMetrics.averageProcessingTimeMs / 100.0), 0.0);
+            factors++;
+        }
+        
+        return factors > 0 ? score / factors : 0.0;
     }
     
     /**
-     * Get performance summary string
+     * Get human-readable performance summary
+     * @return Performance summary string
      */
-    @NonNull
     public String getPerformanceSummary() {
         StringBuilder summary = new StringBuilder();
-        summary.append("Camera Performance Report:\n");
-        summary.append(String.format("  Frame Rate: %.1f FPS (Target: 30 FPS) - %s\n", 
-                currentFrameRate, meetingFrameRateTarget ? "✓" : "✗"));
         
-        if (performanceMetrics != null) {
-            summary.append(String.format("  Memory Usage: %d MB (Target: <50 MB) - %s\n", 
-                    performanceMetrics.usedMemoryMB, meetingMemoryTarget ? "✓" : "✗"));
-            summary.append(String.format("  Processing Latency: %d ms (Target: <100 ms) - %s\n", 
-                    performanceMetrics.averageProcessingTimeMs, meetingLatencyTarget ? "✓" : "✗"));
-        }
-        
-        summary.append(String.format("  Overall Score: %.1f%% (%s)\n", 
-                getPerformanceScore() * 100, isPerformanceOptimal() ? "Optimal" : "Needs Improvement"));
+        summary.append("Camera Performance Report\n");
+        summary.append("========================\n");
         
         if (frameStats != null) {
-            summary.append(String.format("  Frames Processed: %d\n", frameStats.totalFramesProcessed));
-            summary.append(String.format("  Frames Dropped: %d\n", frameStats.totalFramesDropped));
-            if (frameStats.totalFramesProcessed > 0) {
-                double dropRate = (double) frameStats.totalFramesDropped / frameStats.totalFramesProcessed * 100;
-                summary.append(String.format("  Drop Rate: %.1f%%\n", dropRate));
-            }
+            summary.append("Frame Processing:\n");
+            summary.append("  - Total Frames: ").append(frameStats.totalFramesProcessed).append("\n");
+            summary.append("  - Dropped Frames: ").append(frameStats.totalFramesDropped).append("\n");
+            summary.append("  - Drop Rate: ").append(String.format("%.2f%%", frameStats.getFrameDropRate())).append("\n");
+            summary.append("  - Avg Processing: ").append(frameStats.averageProcessingTimeMs).append("ms\n");
         }
+        
+        if (performanceMetrics != null) {
+            summary.append("Performance Metrics:\n");
+            summary.append("  - Memory Used: ").append(performanceMetrics.usedMemoryMB).append("MB\n");
+            summary.append("  - Memory Target: ").append(meetingMemoryTarget ? "✓ PASS" : "✗ FAIL").append("\n");
+            summary.append("  - Avg Latency: ").append(performanceMetrics.averageProcessingTimeMs).append("ms\n");
+            summary.append("  - Latency Target: ").append(meetingLatencyTarget ? "✓ PASS" : "✗ FAIL").append("\n");
+        }
+        
+        summary.append("Frame Rate:\n");
+        summary.append("  - Current: ").append(String.format("%.1f", currentFrameRate)).append(" FPS\n");
+        summary.append("  - Target: ").append(meetingFrameRateTarget ? "✓ PASS" : "✗ FAIL").append("\n");
+        
+        summary.append("Overall Score: ").append(String.format("%.2f", getPerformanceScore())).append("\n");
         
         return summary.toString();
     }
     
     @Override
     public String toString() {
-        return String.format("CameraPerformanceReport{fps=%.1f, optimal=%s, score=%.1f%%}", 
-                currentFrameRate, isPerformanceOptimal(), getPerformanceScore() * 100);
+        return "CameraPerformanceReport{" +
+                "frameRate=" + currentFrameRate +
+                ", frameStats=" + frameStats +
+                ", meetingTargets=" + (meetingFrameRateTarget && meetingMemoryTarget && meetingLatencyTarget) +
+                ", score=" + String.format("%.2f", getPerformanceScore()) +
+                '}';
     }
 }
