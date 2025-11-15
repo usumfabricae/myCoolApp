@@ -200,7 +200,7 @@ public class CameraManagerTest {
     public void testFrameProcessingErrorRecovery() {
         // Test frame processing with error recovery
         final CountDownLatch errorLatch = new CountDownLatch(1);
-        final Exception testException = new RuntimeException("Test frame processing error");
+        final RuntimeException testException = new RuntimeException("Test frame processing error");
         
         com.example.opencvcamerastream.camera.CameraManager.FrameCallback errorCallback = 
             new com.example.opencvcamerastream.camera.CameraManager.FrameCallback() {
