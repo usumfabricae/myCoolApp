@@ -1237,78 +1237,7 @@ public class CameraManager {
         }
     }
     
-    /**
-     * Adjust frame processing based on performance level
-     * Requirements: NFR-001, NFR-002
-     */
-    private void adjustFrameProcessingForPerformance(@NonNull PerformanceMonitor.PerformanceLevel level) {
-        Log.d(TAG, "Adjusting frame processing for performance level: " + level);
-        
-        // Adjust ImageReader buffer size based on performance
-        if (imageReader != null) {
-            try {
-                // Lower buffer sizes for lower performance levels
-                int bufferSize;
-                switch (level) {
-                    case HIGH:
-                        bufferSize = 3;
-                        break;
-                    case MEDIUM:
-                        bufferSize = 2;
-                        break;
-                    case LOW:
-                    case CRITICAL:
-                        bufferSize = 1;
-                        break;
-                    default:
-                        bufferSize = 2;
-                }
-                
-                Log.d(TAG, "Adjusted buffer size to: " + bufferSize);
-                
-            } catch (Exception e) {
-                Log.w(TAG, "Error adjusting frame processing", e);
-            }
-        }
-    }
-    
-    /**
-     * Optimize buffer usage during memory warnings
-     * Requirements: NFR-002
-     */
-    private void optimizeBufferUsage() {
-        Log.d(TAG, "Optimizing buffer usage due to memory warning");
-        
-        synchronized (bufferLock) {
-            // Force garbage collection if memory is tight
-            if (currentBufferSize > 1) {
-                System.gc();
-            }
-        }
-        
-        // Reduce buffer capacity temporarily
-        adjustFrameProcessingForPerformance(PerformanceMonitor.PerformanceLevel.LOW);
-    }
-    
-    /**
-     * Emergency buffer cleanup during critical memory situations
-     * Requirements: NFR-002
-     */
-    private void emergencyBufferCleanup() {
-        Log.w(TAG, "Emergency buffer cleanup due to critical memory usage");
-        
-        synchronized (bufferLock) {
-            // Reset buffer tracking
-            currentBufferSize = 0;
-            isProcessingFrame = false;
-        }
-        
-        // Force aggressive garbage collection
-        System.gc();
-        
-        // Switch to minimal processing
-        adjustFrameProcessingForPerformance(PerformanceMonitor.PerformanceLevel.CRITICAL);
-    }
+
     
 
     
@@ -1506,42 +1435,7 @@ public class CameraManager {
     }
 
     
-    /**
-     * Start background thread for camera operations
-     */
-    private void startBackgroundThread() {
-        backgroundThread = new HandlerThread("CameraBackground");
-        backgroundThread.start();
-        backgroundHandler = new Handler(backgroundThread.getLooper());
-        Log.d(TAG, "Background thread started");
-    }
-    
-    /**
-     * Stop background thread
-     */
-    private void stopBackgroundThread() {
-        if (backgroundThread != null) {
-            backgroundThread.quitSafely();
-            try {
-                backgroundThread.join();
-                backgroundThread = null;
-                backgroundHandler = null;
-                Log.d(TAG, "Background thread stopped");
-            } catch (InterruptedException e) {
-                Log.e(TAG, "Error stopping background thread", e);
-                Thread.currentThread().interrupt();
-            }
-        }
-    }
-    
-    /**
-     * Notify camera callback of error
-     */
-    private void notifyCameraError(int error, @NonNull String message) {
-        if (cameraCallback != null) {
-            cameraCallback.onCameraError(error, message);
-        }
-    }
+
     
     /**
      * Comparator for sorting sizes by area
