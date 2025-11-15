@@ -10,9 +10,13 @@ import com.example.opencvcamerastream.error.PerformanceMonitor;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
 import org.robolectric.RobolectricTestRunner;
+import org.robolectric.annotation.Config;
 
 import static org.junit.Assert.*;
+import static org.mockito.Mockito.*;
 
 /**
  * Unit tests for camera performance monitoring functionality
@@ -23,15 +27,30 @@ import static org.junit.Assert.*;
  * - NFR-003: Processing latency measurement (<100ms target)
  */
 @RunWith(RobolectricTestRunner.class)
+@Config(sdk = 29) // Test on Android 10
 public class CameraPerformanceMonitoringTest {
     
     private Context context;
     private CameraManager cameraManager;
     
+    @Mock
+    private android.hardware.camera2.CameraManager mockSystemCameraManager;
+    
     @Before
     public void setUp() {
+        MockitoAnnotations.openMocks(this);
         context = ApplicationProvider.getApplicationContext();
-        cameraManager = new CameraManager(context);
+        
+        // Mock the system camera manager service
+        when(context.getSystemService(Context.CAMERA_SERVICE)).thenReturn(mockSystemCameraManager);
+        when(context.getApplicationContext()).thenReturn(context);
+        
+        try {
+            cameraManager = new CameraManager(context);
+        } catch (Exception e) {
+            // Handle initialization errors gracefully in tests
+            fail("CameraManager initialization failed: " + e.getMessage());
+        }
     }
     
     /**
