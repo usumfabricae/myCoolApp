@@ -11,6 +11,10 @@ import android.util.Size;
 
 import com.example.opencvcamerastream.error.ErrorHandler;
 import com.example.opencvcamerastream.error.PerformanceMonitor;
+import com.example.opencvcamerastream.camera.FrameProcessingStats;
+import com.example.opencvcamerastream.camera.CameraPerformanceReport;
+import com.example.opencvcamerastream.camera.CameraMemoryUsage;
+import com.example.opencvcamerastream.camera.ProcessingLatencyMetrics;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -222,14 +226,12 @@ public class CameraManagerTest {
         // Test frame buffer management and overflow handling
         // Requirements: NFR-001, NFR-002
         
-        com.example.opencvcamerastream.camera.CameraManager.FrameProcessingStats stats = 
-            cameraManager.getFrameProcessingStats();
+        FrameProcessingStats stats = cameraManager.getFrameProcessingStats();
         
         assertNotNull("Frame processing stats should be available", stats);
         assertEquals("Initial frames processed should be 0", 0, stats.totalFramesProcessed);
         assertEquals("Initial frames dropped should be 0", 0, stats.totalFramesDropped);
-        assertEquals("Initial buffer size should be 0", 0, stats.currentBufferSize);
-        assertFalse("Should not be processing frame initially", stats.isProcessingFrame);
+        assertEquals("Initial frames captured should be 0", 0, stats.totalFramesCaptured);
     }
     
     @Test
@@ -237,16 +239,15 @@ public class CameraManagerTest {
         // Test frame drop rate calculation
         // Requirements: NFR-001
         
-        com.example.opencvcamerastream.camera.CameraManager.FrameProcessingStats stats = 
-            cameraManager.getFrameProcessingStats();
+        FrameProcessingStats stats = cameraManager.getFrameProcessingStats();
         
-        assertEquals("Initial frame drop rate should be 0", 0.0, stats.frameDropRate, 0.001);
+        assertEquals("Initial frame drop rate should be 0", 0.0, stats.getFrameDropRate(), 0.001);
         
         // Reset stats to test calculation
         cameraManager.resetFrameProcessingStats();
         stats = cameraManager.getFrameProcessingStats();
         
-        assertEquals("Frame drop rate should be 0 after reset", 0.0, stats.frameDropRate, 0.001);
+        assertEquals("Frame drop rate should be 0 after reset", 0.0, stats.getFrameDropRate(), 0.001);
     }
     
     @Test
@@ -280,8 +281,7 @@ public class CameraManagerTest {
         
         when(mockPerformanceMonitor.getCurrentMetrics()).thenReturn(mockMetrics);
         
-        com.example.opencvcamerastream.camera.CameraManager.CameraPerformanceReport report = 
-            cameraManager.getPerformanceReport();
+        CameraPerformanceReport report = cameraManager.getPerformanceReport();
         
         assertNotNull("Performance report should be generated", report);
         assertNotNull("Frame stats should be included", report.frameStats);
@@ -294,8 +294,7 @@ public class CameraManagerTest {
         // Test camera-specific memory usage monitoring
         // Requirements: NFR-002
         
-        com.example.opencvcamerastream.camera.CameraManager.CameraMemoryUsage memoryUsage = 
-            cameraManager.getCameraMemoryUsage();
+        CameraMemoryUsage memoryUsage = cameraManager.getCameraMemoryUsage();
         
         assertNotNull("Memory usage should be available", memoryUsage);
         assertTrue("Current buffer count should be non-negative", memoryUsage.currentBufferCount >= 0);
@@ -307,8 +306,7 @@ public class CameraManagerTest {
         // Test processing latency measurement
         // Requirements: NFR-003
         
-        com.example.opencvcamerastream.camera.CameraManager.ProcessingLatencyMetrics latencyMetrics = 
-            cameraManager.getProcessingLatencyMetrics();
+        ProcessingLatencyMetrics latencyMetrics = cameraManager.getProcessingLatencyMetrics();
         
         assertNotNull("Latency metrics should be available", latencyMetrics);
         assertTrue("Current latency should be non-negative", latencyMetrics.currentLatencyMs >= 0);
@@ -355,8 +353,7 @@ public class CameraManagerTest {
         cameraManager.startPerformanceMonitoring();
         
         // Stop monitoring session and get report
-        com.example.opencvcamerastream.camera.CameraManager.CameraPerformanceReport report = 
-            cameraManager.stopPerformanceMonitoring();
+        CameraPerformanceReport report = cameraManager.stopPerformanceMonitoring();
         
         assertNotNull("Performance report should be generated", report);
         assertNotNull("Frame stats should be included in report", report.frameStats);
@@ -385,8 +382,7 @@ public class CameraManagerTest {
         when(mockPerformanceMonitor.getCurrentMetrics()).thenReturn(mockMetrics);
         
         // Get memory usage - this should trigger optimization
-        com.example.opencvcamerastream.camera.CameraManager.CameraMemoryUsage memoryUsage = 
-            cameraManager.getCameraMemoryUsage();
+        CameraMemoryUsage memoryUsage = cameraManager.getCameraMemoryUsage();
         
         assertNotNull("Memory usage should be available under pressure", memoryUsage);
         assertTrue("Memory usage percent should reflect high usage", memoryUsage.memoryUsagePercent > 80.0);
@@ -424,8 +420,7 @@ public class CameraManagerTest {
         assertFalse("Preview should not be active after enhanced release", cameraManager.isPreviewActive());
         
         // Performance metrics should still be accessible for final report
-        com.example.opencvcamerastream.camera.CameraManager.FrameProcessingStats stats = 
-            cameraManager.getFrameProcessingStats();
+        FrameProcessingStats stats = cameraManager.getFrameProcessingStats();
         assertNotNull("Frame stats should be available after release", stats);
     }
 }
