@@ -69,3 +69,81 @@ dependencies {
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
 }
+
+// ============================================================================
+// OpenCV Module Library Validation Task
+// ============================================================================
+// Validates that OpenCV native libraries are present in the opencv module
+// This is a supplementary check to the main validation in the app module
+
+task validateOpenCVLibraries {
+    description = 'Validates that OpenCV native libraries are present in the opencv module'
+    group = 'verification'
+    
+    doLast {
+        println "\n=========================================="
+        println "OpenCV Module Library Validation"
+        println "==========================================\n"
+        
+        def requiredLibraries = [
+            'libc++_shared.so',
+            'libopencv_java4.so'
+        ]
+        
+        def supportedArchitectures = ['armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64']
+        def jniLibsDir = file("${project.projectDir}/src/main/jniLibs")
+        
+        def missingLibraries = []
+        def foundCount = 0
+        def totalExpected = supportedArchitectures.size() * requiredLibraries.size()
+        
+        if (!jniLibsDir.exists()) {
+            println "⚠️  jniLibs directory does not exist: ${jniLibsDir.path}"
+            println "This is expected if libraries are managed in the app module only.\n"
+            return
+        }
+        
+        supportedArchitectures.each { arch ->
+            def archDir = new File(jniLibsDir, arch)
+            println "${arch}:"
+            
+            if (!archDir.exists()) {
+                println "  ⚠️  Architecture directory not found"
+                requiredLibraries.each { lib ->
+                    missingLibraries << "${arch}/${lib}"
+                }
+            } else {
+                requiredLibraries.each { lib ->
+                    def libFile = new File(archDir, lib)
+                    if (libFile.exists() && libFile.length() > 0) {
+                        println "  ✅ ${lib}: Found (${libFile.length()} bytes)"
+                        foundCount++
+                    } else {
+                        println "  ❌ ${lib}: NOT FOUND"
+                        missingLibraries << "${arch}/${lib}"
+                    }
+                }
+            }
+        }
+        
+        println "\nSummary: ${foundCount}/${totalExpected} libraries found"
+        
+        if (foundCount == 0) {
+            println "\n⚠️  No libraries found in opencv module."
+            println "This is acceptable if libraries are managed in the app module."
+            println "The app module validation will check for library presence.\n"
+        } else if (!missingLibraries.isEmpty()) {
+            println "\n⚠️  Some libraries are missing:"
+            missingLibraries.each { lib ->
+                println "  - ${lib}"
+            }
+            println "\nRun the library acquisition script to download missing libraries:"
+            println "  ./scripts/download-opencv-libs-only.sh (Linux/Mac)"
+            println "  .\\scripts\\download-opencv-libs-only.ps1 (Windows)\n"
+        } else {
+            println "\n✅ All OpenCV libraries are present in the opencv module!"
+        }
+        
+        println "==========================================\n"
+    }
+}

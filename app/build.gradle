@@ -151,3 +151,140 @@ task jacocoTestReport(type: JacocoReport, dependsOn: ['testDebugUnitTest']) {
         "outputs/code-coverage/connected/*coverage.ec"
     ]))
 }
+
+// ============================================================================
+// Build-time Library Validation Task
+// ============================================================================
+// Validates that all required OpenCV native libraries are present before APK packaging
+// Requirements: Req-1 (library inclusion), Req-5 (robust acquisition system)
+
+task validateNativeLibraries {
+    description = 'Validates that all required OpenCV native libraries are present for all supported architectures'
+    group = 'verification'
+    
+    doLast {
+        println "\n=========================================="
+        println "Native Library Validation"
+        println "==========================================\n"
+        
+        // Define required libraries
+        def requiredLibraries = [
+            'libc++_shared.so',
+            'libopencv_java4.so'
+        ]
+        
+        // Define supported architectures (from defaultConfig.ndk.abiFilters)
+        def supportedArchitectures = ['armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64']
+        
+        // Check both app and opencv module jniLibs directories
+        def jniLibsDirs = [
+            file("${project.projectDir}/src/main/jniLibs"),
+            file("${project.rootProject.projectDir}/opencv/src/main/jniLibs")
+        ]
+        
+        def validationErrors = []
+        def validationWarnings = []
+        def foundLibraries = [:]
+        
+        // Track which libraries are found in which locations
+        supportedArchitectures.each { arch ->
+            foundLibraries[arch] = [:]
+            requiredLibraries.each { lib ->
+                foundLibraries[arch][lib] = []
+            }
+        }
+        
+        // Scan all jniLibs directories
+        jniLibsDirs.each { jniLibsDir ->
+            if (jniLibsDir.exists()) {
+                supportedArchitectures.each { arch ->
+                    def archDir = new File(jniLibsDir, arch)
+                    if (archDir.exists()) {
+                        requiredLibraries.each { lib ->
+                            def libFile = new File(archDir, lib)
+                            if (libFile.exists() && libFile.length() > 0) {
+                                foundLibraries[arch][lib] << jniLibsDir.path
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Validate findings
+        supportedArchitectures.each { arch ->
+            requiredLibraries.each { lib ->
+                def locations = foundLibraries[arch][lib]
+                
+                if (locations.isEmpty()) {
+                    validationErrors << "Missing library: ${lib} for architecture: ${arch}"
+                } else if (locations.size() > 1) {
+                    validationWarnings << "Duplicate library: ${lib} for architecture: ${arch} found in multiple locations: ${locations.join(', ')}"
+                }
+            }
+        }
+        
+        // Print detailed results
+        println "Validation Results:"
+        println "-------------------"
+        
+        supportedArchitectures.each { arch ->
+            println "\n${arch}:"
+            requiredLibraries.each { lib ->
+                def locations = foundLibraries[arch][lib]
+                if (locations.isEmpty()) {
+                    println "  ❌ ${lib}: NOT FOUND"
+                } else if (locations.size() == 1) {
+                    def location = locations[0].replace(project.rootProject.projectDir.path, '')
+                    println "  ✅ ${lib}: Found in ${location}"
+                } else {
+                    println "  ⚠️  ${lib}: Found in multiple locations (${locations.size()})"
+                }
+            }
+        }
+        
+        // Print warnings
+        if (!validationWarnings.isEmpty()) {
+            println "\n⚠️  Warnings:"
+            validationWarnings.each { warning ->
+                println "  - ${warning}"
+            }
+            println "\nNote: Duplicate libraries will be handled by packagingOptions.pickFirst"
+        }
+        
+        // Print errors and fail if necessary
+        if (!validationErrors.isEmpty()) {
+            println "\n❌ Validation Failed!"
+            println "\nErrors:"
+            validationErrors.each { error ->
+                println "  - ${error}"
+            }
+            
+            println "\n=========================================="
+            println "SOLUTION: Run the library acquisition script"
+            println "==========================================\n"
+            println "The required OpenCV native libraries are missing."
+            println "Please run one of the following scripts to download them:\n"
+            println "  Linux/Mac:  ./scripts/download-opencv-libs-only.sh"
+            println "  Windows:    .\\scripts\\download-opencv-libs-only.ps1"
+            println "  Or:         ./scripts/setup-opencv.sh\n"
+            println "These scripts will download and extract the OpenCV Android SDK"
+            println "and place the native libraries in the correct directories.\n"
+            println "After running the script, rebuild your project."
+            println "==========================================\n"
+            
+            throw new GradleException("Native library validation failed. See error messages above.")
+        }
+        
+        println "\n✅ All required native libraries are present!"
+        println "==========================================\n"
+    }
+}
+
+// Hook the validation task into the build process
+// Run before any packaging tasks (assembleDebug, assembleRelease, etc.)
+tasks.whenTaskAdded { task ->
+    if (task.name.startsWith('package') || task.name.startsWith('assemble')) {
+        task.dependsOn validateNativeLibraries
+    }
+}
