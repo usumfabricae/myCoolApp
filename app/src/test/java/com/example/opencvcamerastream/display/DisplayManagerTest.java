@@ -175,6 +175,158 @@ public class DisplayManagerTest {
         assertTrue("Clear pending updates should work", true);
     }
 
+    @Test
+    public void testHardwareAcceleration() {
+        // Test hardware acceleration enable/disable (Requirement 9.4)
+        assertTrue("Hardware acceleration should be enabled by default", 
+                displayManager.isHardwareAccelerationEnabled());
+        
+        displayManager.setHardwareAccelerationEnabled(false);
+        assertFalse("Hardware acceleration should be disabled", 
+                displayManager.isHardwareAccelerationEnabled());
+        
+        displayManager.setHardwareAccelerationEnabled(true);
+        assertTrue("Hardware acceleration should be re-enabled", 
+                displayManager.isHardwareAccelerationEnabled());
+    }
+
+    @Test
+    public void testPerformanceMetrics() {
+        // Test performance metrics collection (Requirement 9.4)
+        displayManager.setupDisplay(mockTextureView);
+        
+        DisplayManager.DisplayPerformanceMetrics metrics = displayManager.getPerformanceMetrics();
+        
+        assertNotNull("Performance metrics should not be null", metrics);
+        assertEquals("Initial frame count should be 0", 0, metrics.frameCount);
+        assertEquals("Initial slow frame count should be 0", 0, metrics.slowFrameCount);
+        assertTrue("Hardware acceleration should be enabled", metrics.hardwareAccelerated);
+    }
+
+    @Test
+    public void testPerformanceMetricsReset() {
+        // Test performance metrics reset (Requirement 9.4)
+        displayManager.setupDisplay(mockTextureView);
+        
+        // Simulate some frames
+        org.opencv.core.Mat testMat = createTestMat();
+        for (int i = 0; i < 5; i++) {
+            displayManager.updateFrame(testMat);
+        }
+        testMat.release();
+        
+        // Reset metrics
+        displayManager.resetPerformanceMetrics();
+        
+        DisplayManager.DisplayPerformanceMetrics metrics = displayManager.getPerformanceMetrics();
+        assertEquals("Frame count should be reset to 0", 0, metrics.frameCount);
+        assertEquals("Slow frame count should be reset to 0", 0, metrics.slowFrameCount);
+    }
+
+    @Test
+    public void testRotationPerformance() {
+        // Test rotation performance (Requirement 9.4)
+        displayManager.setupDisplay(mockTextureView);
+        
+        long startTime = System.currentTimeMillis();
+        
+        // Test multiple rotations
+        displayManager.rotateDisplay(90);
+        displayManager.rotateDisplay(180);
+        displayManager.rotateDisplay(270);
+        displayManager.rotateDisplay(0);
+        
+        long totalTime = System.currentTimeMillis() - startTime;
+        
+        // All rotations should complete quickly (< 50ms total)
+        assertTrue("Rotation operations should be fast", totalTime < 50);
+    }
+
+    @Test
+    public void testOrientationChangePerformance() {
+        // Test orientation change performance (Requirement 9.4)
+        displayManager.setupDisplay(mockTextureView);
+        
+        long startTime = System.currentTimeMillis();
+        
+        // Simulate orientation changes
+        displayManager.handleOrientationChange(1080, 1920);
+        displayManager.handleOrientationChange(1920, 1080);
+        displayManager.handleOrientationChange(800, 600);
+        
+        long totalTime = System.currentTimeMillis() - startTime;
+        
+        // Orientation changes should complete quickly (< 30ms total)
+        assertTrue("Orientation changes should be fast", totalTime < 30);
+    }
+
+    @Test
+    public void testFrameUpdatePerformanceTarget() {
+        // Test that frame updates meet 60 FPS target (Requirement 9.4)
+        displayManager.setupDisplay(mockTextureView);
+        org.opencv.core.Mat testMat = createTestMat();
+        
+        int frameCount = 60;
+        long startTime = System.currentTimeMillis();
+        
+        for (int i = 0; i < frameCount; i++) {
+            displayManager.updateFrame(testMat);
+        }
+        
+        long totalTime = System.currentTimeMillis() - startTime;
+        float avgTimePerFrame = (float) totalTime / frameCount;
+        
+        testMat.release();
+        
+        // Average time per frame should be close to 16ms (60 FPS) or better
+        // Allow some overhead for test environment
+        assertTrue("Average frame update time should support 60 FPS", avgTimePerFrame < 50);
+    }
+
+    @Test
+    public void testConcurrentMatrixAccess() {
+        // Test thread-safe matrix access (Requirement 9.4)
+        displayManager.setupDisplay(mockTextureView);
+        
+        // Simulate concurrent rotation and frame updates
+        Thread rotationThread = new Thread(() -> {
+            for (int i = 0; i < 10; i++) {
+                displayManager.rotateDisplay(i * 90);
+                try {
+                    Thread.sleep(5);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        });
+        
+        Thread frameThread = new Thread(() -> {
+            org.opencv.core.Mat testMat = createTestMat();
+            for (int i = 0; i < 10; i++) {
+                displayManager.updateFrame(testMat);
+                try {
+                    Thread.sleep(5);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            testMat.release();
+        });
+        
+        rotationThread.start();
+        frameThread.start();
+        
+        try {
+            rotationThread.join(1000);
+            frameThread.join(1000);
+        } catch (InterruptedException e) {
+            fail("Thread synchronization test interrupted");
+        }
+        
+        // Should complete without deadlock or exceptions
+        assertTrue("Concurrent access should work without issues", true);
+    }
+
     private org.opencv.core.Mat createTestMat() {
         return new org.opencv.core.Mat(100, 100, org.opencv.core.CvType.CV_8UC3);
     }

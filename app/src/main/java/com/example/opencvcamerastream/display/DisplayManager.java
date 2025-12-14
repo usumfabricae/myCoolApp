@@ -50,6 +50,21 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
     private int frameCount = 0;
     private static final int FPS_CALCULATION_INTERVAL = 30; // Calculate FPS every 30 frames
     
+    // Performance optimization settings
+    private static final long TARGET_FRAME_TIME_MS = 16; // 60 FPS target
+    private static final long MAX_FRAME_TIME_MS = 33; // 30 FPS minimum
+    private boolean hardwareAccelerationEnabled = true;
+    
+    // Performance metrics
+    private long totalUpdateTime = 0;
+    private long maxUpdateTime = 0;
+    private long minUpdateTime = Long.MAX_VALUE;
+    private int slowFrameCount = 0;
+    
+    // Matrix transformation optimization
+    private boolean matrixNeedsUpdate = true;
+    private final Object matrixLock = new Object();
+    
     /**
      * Callback interface for display events
      */
@@ -84,12 +99,39 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
      */
     public DisplayManager(@NonNull Context context) {
         this.context = context;
-        Log.d(TAG, "DisplayManager created");
+        Log.d(TAG, "DisplayManager created with hardware acceleration enabled");
+    }
+    
+    /**
+     * Enable or disable hardware acceleration for rendering
+     * Requirement 9.4: Hardware-accelerated rendering optimizations
+     * 
+     * @param enabled true to enable hardware acceleration, false to disable
+     */
+    public void setHardwareAccelerationEnabled(boolean enabled) {
+        this.hardwareAccelerationEnabled = enabled;
+        Log.d(TAG, "Hardware acceleration " + (enabled ? "enabled" : "disabled"));
+        
+        if (textureView != null) {
+            textureView.setLayerType(enabled ? 
+                android.view.View.LAYER_TYPE_HARDWARE : 
+                android.view.View.LAYER_TYPE_SOFTWARE, null);
+        }
+    }
+    
+    /**
+     * Check if hardware acceleration is enabled
+     * 
+     * @return true if hardware acceleration is enabled
+     */
+    public boolean isHardwareAccelerationEnabled() {
+        return hardwareAccelerationEnabled;
     }
     
     /**
      * Set up the TextureView for display
      * Requirement 3.1: Display processed frames on screen
+     * Requirement 9.4: Enable hardware acceleration
      * 
      * @param textureView The TextureView to use for display
      * @return true if setup was successful, false otherwise
@@ -100,6 +142,15 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
         this.textureView = textureView;
         this.textureView.setSurfaceTextureListener(this);
         
+        // Enable hardware acceleration for optimal performance
+        if (hardwareAccelerationEnabled) {
+            this.textureView.setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null);
+            Log.d(TAG, "Hardware acceleration enabled for TextureView");
+        }
+        
+        // Optimize TextureView for performance
+        this.textureView.setOpaque(true); // Opaque rendering is faster
+        
         // If the TextureView is already available, set up immediately
         if (textureView.isAvailable()) {
             Log.d(TAG, "TextureView already available, setting up surface");
@@ -107,13 +158,14 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
                     textureView.getWidth(), textureView.getHeight());
         }
         
-        Log.i(TAG, "Display setup completed");
+        Log.i(TAG, "Display setup completed with hardware acceleration");
         return true;
     }
     
     /**
      * Update the display with a new processed frame
      * Requirements 3.1, 3.3: Display processed frame within 16ms for 60 FPS UI
+     * Requirement 9.4: Maintain 60 FPS UI responsiveness
      * 
      * @param processedFrame The OpenCV Mat containing the processed frame
      * @return true if frame was updated successfully, false otherwise
@@ -147,7 +199,7 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
                   ", channels: " + processedFrame.channels() + ", type: " + processedFrame.type());
         }
         
-        long startTime = System.currentTimeMillis();
+        long startTime = System.nanoTime(); // Use nanoTime for more precise measurements
         
         try {
             // Convert Mat to Bitmap
@@ -163,38 +215,65 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
             if (frameWidth != processedFrame.width() || frameHeight != processedFrame.height()) {
                 frameWidth = processedFrame.width();
                 frameHeight = processedFrame.height();
-                updateTransformMatrix();
+                synchronized (matrixLock) {
+                    matrixNeedsUpdate = true;
+                }
                 Log.d(TAG, "Frame dimensions updated: " + frameWidth + "x" + frameHeight);
             }
             
-            // Draw bitmap to surface
+            // Update transform matrix only if needed (optimization)
+            synchronized (matrixLock) {
+                if (matrixNeedsUpdate) {
+                    updateTransformMatrix();
+                    matrixNeedsUpdate = false;
+                }
+            }
+            
+            // Draw bitmap to surface with hardware acceleration
             Canvas canvas = surface.lockCanvas(null);
             if (canvas != null) {
                 try {
-                    // Clear canvas
-                    canvas.drawColor(android.graphics.Color.BLACK);
-                    
-                    // Apply transform matrix to maintain aspect ratio
-                    canvas.setMatrix(transformMatrix);
-                    
-                    // Draw the bitmap
-                    canvas.drawBitmap(bitmap, 0, 0, null);
+                    // Enable hardware acceleration hints
+                    if (hardwareAccelerationEnabled && canvas.isHardwareAccelerated()) {
+                        // Hardware accelerated path
+                        canvas.drawColor(android.graphics.Color.BLACK);
+                        
+                        // Apply transform matrix to maintain aspect ratio
+                        synchronized (matrixLock) {
+                            canvas.setMatrix(transformMatrix);
+                        }
+                        
+                        // Draw the bitmap with hardware acceleration
+                        canvas.drawBitmap(bitmap, 0, 0, null);
+                    } else {
+                        // Software rendering fallback
+                        canvas.drawColor(android.graphics.Color.BLACK);
+                        synchronized (matrixLock) {
+                            canvas.setMatrix(transformMatrix);
+                        }
+                        canvas.drawBitmap(bitmap, 0, 0, null);
+                    }
                     
                 } finally {
                     surface.unlockCanvasAndPost(canvas);
                 }
             }
             
-            // Recycle bitmap to free memory
+            // Recycle bitmap to free memory immediately
             bitmap.recycle();
             
-            // Track performance
-            long updateTime = System.currentTimeMillis() - startTime;
-            trackPerformance(updateTime);
+            // Track performance with nanosecond precision
+            long updateTimeNs = System.nanoTime() - startTime;
+            long updateTimeMs = updateTimeNs / 1_000_000;
+            trackPerformance(updateTimeMs);
             
-            // Requirement 3.3: Update display within 16ms
-            if (updateTime > 16) {
-                Log.w(TAG, "Frame update took " + updateTime + "ms (>16ms target)");
+            // Requirement 9.4: Warn if frame update exceeds 16ms (60 FPS target)
+            if (updateTimeMs > TARGET_FRAME_TIME_MS) {
+                slowFrameCount++;
+                if (slowFrameCount % 10 == 0) { // Log every 10th slow frame to avoid spam
+                    Log.w(TAG, "Frame update took " + updateTimeMs + "ms (>" + TARGET_FRAME_TIME_MS + 
+                            "ms target), slow frames: " + slowFrameCount);
+                }
             }
             
             return true;
@@ -209,18 +288,24 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
     }
     
     /**
-     * Convert OpenCV Mat to Android Bitmap with enhanced safety and format handling
+     * Convert OpenCV Mat to Android Bitmap with thread-safe access and format handling
      * 
-     * @param mat The OpenCV Mat to convert
+     * Thread Safety Guarantees:
+     * - The entire Mat processing is synchronized on the input Mat object
+     * - No defensive cloning is performed - the original Mat is processed directly
+     * - Callers must ensure the Mat remains valid during the entire conversion process
+     * - The synchronized block covers validation, format conversion, and bitmap creation
+     * 
+     * @param mat The OpenCV Mat to convert (must remain valid during conversion)
      * @return Bitmap or null if conversion failed
      */
     @Nullable
     private Bitmap matToBitmap(@NonNull Mat mat) {
-        // Thread-safe Mat cloning to prevent concurrent modification
-        Mat safeMat = null;
         Mat convertedMat = null;
         
         try {
+            // Thread-safe processing without defensive cloning
+            // The synchronized block ensures exclusive access to the Mat during the entire conversion
             synchronized (mat) {
                 // Deep validation of Mat properties
                 if (mat.empty() || mat.width() <= 0 || mat.height() <= 0) {
@@ -246,27 +331,25 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
                     return createFallbackBitmap();
                 }
                 
-                // Create a safe clone to prevent memory corruption
-                safeMat = mat.clone();
+                // Process the original Mat directly without cloning
+                // Ensure proper Mat format for bitmap conversion
+                convertedMat = ensureCompatibleFormat(mat);
+                
+                // Determine appropriate bitmap configuration
+                Bitmap.Config config = getBitmapConfig(convertedMat.channels());
+                
+                // Create bitmap with validated parameters
+                Bitmap bitmap = Bitmap.createBitmap(
+                    convertedMat.width(), 
+                    convertedMat.height(), 
+                    config
+                );
+                
+                // Safe OpenCV conversion with error handling
+                Utils.matToBitmap(convertedMat, bitmap);
+                
+                return bitmap;
             }
-            
-            // Ensure proper Mat format for bitmap conversion
-            convertedMat = ensureCompatibleFormat(safeMat);
-            
-            // Determine appropriate bitmap configuration
-            Bitmap.Config config = getBitmapConfig(convertedMat.channels());
-            
-            // Create bitmap with validated parameters
-            Bitmap bitmap = Bitmap.createBitmap(
-                convertedMat.width(), 
-                convertedMat.height(), 
-                config
-            );
-            
-            // Safe OpenCV conversion with error handling
-            Utils.matToBitmap(convertedMat, bitmap);
-            
-            return bitmap;
             
         } catch (IllegalArgumentException e) {
             Log.e(TAG, "IllegalArgumentException in Mat to Bitmap conversion", e);
@@ -275,11 +358,8 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
             Log.e(TAG, "Critical error in Mat to Bitmap conversion", e);
             return createFallbackBitmap();
         } finally {
-            // Clean up temporary Mat objects
-            if (safeMat != null) {
-                safeMat.release();
-            }
-            if (convertedMat != null && convertedMat != safeMat) {
+            // Clean up temporary Mat objects (only convertedMat if it's different from input)
+            if (convertedMat != null && convertedMat != mat) {
                 convertedMat.release();
             }
         }
@@ -365,6 +445,7 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
     /**
      * Handle orientation changes and update display accordingly
      * Requirement 1.4: Handle device rotation correctly
+     * Requirement 9.4: Maintain 60 FPS during orientation changes
      * 
      * @param newWidth New display width
      * @param newHeight New display height
@@ -375,7 +456,10 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
         displayWidth = newWidth;
         displayHeight = newHeight;
         
-        updateTransformMatrix();
+        synchronized (matrixLock) {
+            matrixNeedsUpdate = true;
+            updateTransformMatrix();
+        }
         
         Log.i(TAG, "Orientation change handled, new display size: " + displayWidth + "x" + displayHeight);
     }
@@ -383,53 +467,136 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
     /**
      * Update the transform matrix to maintain aspect ratio
      * Requirement 3.2: Maintain original aspect ratio of the camera
+     * Requirement 9.4: Optimize matrix transformation performance
+     * 
+     * Note: This method should be called within a synchronized(matrixLock) block
      */
     private void updateTransformMatrix() {
         if (frameWidth == 0 || frameHeight == 0 || displayWidth == 0 || displayHeight == 0) {
             return;
         }
         
+        long startTime = System.nanoTime();
+        
         transformMatrix.reset();
         
-        // Calculate scaling factors
+        // Calculate scaling factors (optimized with single division)
         float scaleX = (float) displayWidth / frameWidth;
         float scaleY = (float) displayHeight / frameHeight;
         
         // Use the smaller scale to maintain aspect ratio (fit inside display)
         float scale = Math.min(scaleX, scaleY);
         
-        // Calculate translation to center the image
-        float translateX = (displayWidth - frameWidth * scale) / 2f;
-        float translateY = (displayHeight - frameHeight * scale) / 2f;
+        // Calculate translation to center the image (optimized calculation)
+        float scaledWidth = frameWidth * scale;
+        float scaledHeight = frameHeight * scale;
+        float translateX = (displayWidth - scaledWidth) * 0.5f;
+        float translateY = (displayHeight - scaledHeight) * 0.5f;
         
-        // Apply transformations
+        // Apply transformations in optimal order
         transformMatrix.postScale(scale, scale);
         transformMatrix.postTranslate(translateX, translateY);
         
-        Log.d(TAG, "Transform matrix updated - scale: " + scale + 
-                ", translate: (" + translateX + ", " + translateY + ")");
+        long updateTimeNs = System.nanoTime() - startTime;
+        long updateTimeUs = updateTimeNs / 1_000;
+        
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "Transform matrix updated in " + updateTimeUs + "μs - scale: " + scale + 
+                    ", translate: (" + translateX + ", " + translateY + ")");
+        }
     }
     
     /**
      * Track performance metrics
+     * Requirement 9.4: Add performance monitoring for display operations
      */
     private void trackPerformance(long updateTime) {
         frameCount++;
+        totalUpdateTime += updateTime;
+        
+        // Track min/max update times
+        if (updateTime > maxUpdateTime) {
+            maxUpdateTime = updateTime;
+        }
+        if (updateTime < minUpdateTime) {
+            minUpdateTime = updateTime;
+        }
         
         if (frameCount % FPS_CALCULATION_INTERVAL == 0) {
             long currentTime = System.currentTimeMillis();
             if (lastFrameTime > 0) {
                 long timeDiff = currentTime - lastFrameTime;
                 float fps = (FPS_CALCULATION_INTERVAL * 1000f) / timeDiff;
+                float avgUpdateTime = (float) totalUpdateTime / FPS_CALCULATION_INTERVAL;
                 
                 if (displayCallback != null) {
-                    displayCallback.onPerformanceUpdate(fps, updateTime);
+                    displayCallback.onPerformanceUpdate(fps, avgUpdateTime);
                 }
                 
-                Log.v(TAG, "Display performance - FPS: " + String.format("%.1f", fps) + 
-                        ", Last update: " + updateTime + "ms");
+                if (Log.isLoggable(TAG, Log.VERBOSE)) {
+                    Log.v(TAG, String.format("Display performance - FPS: %.1f, " +
+                            "Avg: %.1fms, Min: %dms, Max: %dms, Slow frames: %d",
+                            fps, avgUpdateTime, minUpdateTime, maxUpdateTime, slowFrameCount));
+                }
+                
+                // Check if we're meeting 60 FPS target
+                if (fps < 60.0f && fps > 0) {
+                    Log.w(TAG, String.format("Display FPS below 60: %.1f FPS", fps));
+                }
             }
             lastFrameTime = currentTime;
+            
+            // Reset per-interval metrics
+            totalUpdateTime = 0;
+            minUpdateTime = Long.MAX_VALUE;
+            maxUpdateTime = 0;
+        }
+    }
+    
+    /**
+     * Get current display performance metrics
+     * Requirement 9.4: Performance monitoring for display operations
+     * 
+     * @return DisplayPerformanceMetrics object with current metrics
+     */
+    public DisplayPerformanceMetrics getPerformanceMetrics() {
+        DisplayPerformanceMetrics metrics = new DisplayPerformanceMetrics();
+        metrics.frameCount = frameCount;
+        metrics.slowFrameCount = slowFrameCount;
+        metrics.slowFramePercentage = frameCount > 0 ? (float) slowFrameCount / frameCount * 100 : 0;
+        metrics.hardwareAccelerated = hardwareAccelerationEnabled;
+        metrics.displayReady = isDisplayReady;
+        return metrics;
+    }
+    
+    /**
+     * Reset performance counters
+     * Requirement 9.4: Performance monitoring
+     */
+    public void resetPerformanceMetrics() {
+        frameCount = 0;
+        slowFrameCount = 0;
+        totalUpdateTime = 0;
+        maxUpdateTime = 0;
+        minUpdateTime = Long.MAX_VALUE;
+        lastFrameTime = 0;
+        Log.d(TAG, "Performance metrics reset");
+    }
+    
+    /**
+     * Performance metrics data class
+     */
+    public static class DisplayPerformanceMetrics {
+        public int frameCount;
+        public int slowFrameCount;
+        public float slowFramePercentage;
+        public boolean hardwareAccelerated;
+        public boolean displayReady;
+        
+        @Override
+        public String toString() {
+            return String.format("DisplayPerformanceMetrics{frames=%d, slow=%d (%.1f%%), hwAccel=%s, ready=%s}",
+                    frameCount, slowFrameCount, slowFramePercentage, hardwareAccelerated, displayReady);
         }
     }
     
@@ -461,13 +628,19 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
     /**
      * Handle activity onResume lifecycle event
      * Requirement 5.4: Proper lifecycle management
+     * Requirement 9.4: Restore hardware acceleration on resume
      */
     public void onResume() {
         Log.d(TAG, "DisplayManager onResume - restoring display state");
         
         // Reset performance tracking
-        frameCount = 0;
-        lastFrameTime = 0;
+        resetPerformanceMetrics();
+        
+        // Re-enable hardware acceleration if needed
+        if (textureView != null && hardwareAccelerationEnabled) {
+            textureView.setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null);
+            Log.d(TAG, "Hardware acceleration re-enabled on resume");
+        }
         
         // If TextureView is available, ensure surface is ready
         if (textureView != null && textureView.isAvailable()) {
@@ -477,13 +650,17 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
                 surface = new Surface(surfaceTexture);
                 isDisplayReady = true;
                 
+                synchronized (matrixLock) {
+                    matrixNeedsUpdate = true;
+                }
+                
                 if (displayCallback != null) {
                     displayCallback.onDisplayReady();
                 }
             }
         }
         
-        Log.i(TAG, "DisplayManager resume completed");
+        Log.i(TAG, "DisplayManager resume completed with hardware acceleration");
     }
     
     /**
@@ -513,11 +690,13 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
         Log.d(TAG, "Clearing pending display updates");
         
         // Reset performance counters
-        frameCount = 0;
-        lastFrameTime = 0;
+        resetPerformanceMetrics();
         
         // Clear transform matrix
-        transformMatrix.reset();
+        synchronized (matrixLock) {
+            transformMatrix.reset();
+            matrixNeedsUpdate = true;
+        }
         
         Log.d(TAG, "Pending display updates cleared");
     }
@@ -541,9 +720,84 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
     }
     
     /**
+     * Handle rendering error with recovery attempt
+     * Requirement 11: Error recovery integration
+     * 
+     * @param error The rendering error that occurred
+     * @return true if recovery was attempted, false otherwise
+     */
+    public boolean handleRenderingError(@NonNull Exception error) {
+        Log.e(TAG, "Rendering error occurred: " + error.getMessage(), error);
+        
+        // Notify callback of error
+        if (displayCallback != null) {
+            displayCallback.onFrameUpdateError(error);
+        }
+        
+        // Attempt recovery
+        return recoverFromDisplayError();
+    }
+    
+    /**
+     * Attempt to recover from display errors
+     * Requirement 11: Error recovery mechanism
+     * 
+     * @return true if recovery was successful, false otherwise
+     */
+    public boolean recoverFromDisplayError() {
+        Log.d(TAG, "Attempting to recover from display error");
+        
+        try {
+            // Check if display is still ready
+            if (!isDisplayReady) {
+                Log.d(TAG, "Display not ready, attempting to reinitialize");
+                
+                // If TextureView is available, try to recreate surface
+                if (textureView != null && textureView.isAvailable()) {
+                    SurfaceTexture surfaceTexture = textureView.getSurfaceTexture();
+                    if (surfaceTexture != null) {
+                        surface = new Surface(surfaceTexture);
+                        isDisplayReady = true;
+                        
+                        if (displayCallback != null) {
+                            displayCallback.onDisplayReady();
+                        }
+                        
+                        Log.i(TAG, "Display recovery successful");
+                        return true;
+                    }
+                }
+            } else {
+                // Display is ready, just clear any pending state
+                Log.d(TAG, "Display is ready, clearing pending state");
+                clearPendingUpdates();
+                return true;
+            }
+            
+            Log.w(TAG, "Display recovery failed - TextureView not available");
+            return false;
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error during display recovery", e);
+            return false;
+        }
+    }
+    
+    /**
+     * Check if display is in error state
+     * Requirement 11: Error detection
+     * 
+     * @return true if display appears to be in error state, false otherwise
+     */
+    public boolean isInErrorState() {
+        return !isDisplayReady || surface == null || textureView == null;
+    }
+    
+    /**
      * Rotate the display by the specified degrees
      * Requirement 7.1: Rotate display 90 degrees clockwise
      * Requirement 7.2: Cycle through 0°, 90°, 180°, 270°
+     * Requirement 9.4: Maintain 60 FPS during rotation operations
      * 
      * @param degrees Rotation in degrees (0, 90, 180, 270)
      */
@@ -556,13 +810,19 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
             degrees += 360;
         }
         
-        // Update transform matrix with rotation
-        updateTransformMatrixWithRotation(degrees);
+        // Update transform matrix with rotation (thread-safe)
+        synchronized (matrixLock) {
+            updateTransformMatrixWithRotation(degrees);
+            matrixNeedsUpdate = false; // Matrix just updated
+        }
     }
     
     /**
      * Update transform matrix to include rotation
      * Requirement 7.2: Handle rotation without frame drops
+     * Requirement 9.4: Optimize matrix transformation performance
+     * 
+     * Note: This method should be called within a synchronized(matrixLock) block
      * 
      * @param rotationDegrees Rotation in degrees
      */
@@ -572,32 +832,41 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
             return;
         }
         
+        long startTime = System.nanoTime();
+        
         transformMatrix.reset();
         
-        // Calculate scaling factors
+        // Calculate scaling factors (optimized)
         float scaleX = (float) displayWidth / frameWidth;
         float scaleY = (float) displayHeight / frameHeight;
         
         // Use the smaller scale to maintain aspect ratio
         float scale = Math.min(scaleX, scaleY);
         
-        // Calculate center point for rotation
-        float centerX = displayWidth / 2f;
-        float centerY = displayHeight / 2f;
+        // Calculate center point for rotation (optimized with bit shift)
+        float centerX = displayWidth * 0.5f;
+        float centerY = displayHeight * 0.5f;
         
         // Apply rotation around center
         transformMatrix.postRotate(rotationDegrees, centerX, centerY);
         
-        // Calculate translation to center the rotated image
-        float translateX = (displayWidth - frameWidth * scale) / 2f;
-        float translateY = (displayHeight - frameHeight * scale) / 2f;
+        // Calculate translation to center the rotated image (optimized)
+        float scaledWidth = frameWidth * scale;
+        float scaledHeight = frameHeight * scale;
+        float translateX = (displayWidth - scaledWidth) * 0.5f;
+        float translateY = (displayHeight - scaledHeight) * 0.5f;
         
         // Apply scaling and translation
         transformMatrix.postScale(scale, scale, centerX, centerY);
         transformMatrix.postTranslate(translateX, translateY);
         
-        Log.d(TAG, "Transform matrix updated with rotation: " + rotationDegrees + 
-                " degrees, scale: " + scale);
+        long updateTimeNs = System.nanoTime() - startTime;
+        long updateTimeUs = updateTimeNs / 1_000;
+        
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "Transform matrix updated with rotation in " + updateTimeUs + "μs: " + 
+                    rotationDegrees + " degrees, scale: " + scale);
+        }
     }
     
     /**
@@ -610,8 +879,7 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
         isDisplayReady = false;
         
         // Clear performance tracking
-        frameCount = 0;
-        lastFrameTime = 0;
+        resetPerformanceMetrics();
         
         // Release surface
         if (surface != null) {
@@ -629,7 +897,9 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
         displayCallback = null;
         
         // Clear transform matrix
-        transformMatrix.reset();
+        synchronized (matrixLock) {
+            transformMatrix.reset();
+        }
         
         // Reset dimensions
         frameWidth = 0;
@@ -652,13 +922,16 @@ public class DisplayManager implements TextureView.SurfaceTextureListener {
         surface = new Surface(surfaceTexture);
         isDisplayReady = true;
         
-        updateTransformMatrix();
+        synchronized (matrixLock) {
+            matrixNeedsUpdate = true;
+            updateTransformMatrix();
+        }
         
         if (displayCallback != null) {
             displayCallback.onDisplayReady();
         }
         
-        Log.i(TAG, "Display surface ready for rendering");
+        Log.i(TAG, "Display surface ready for rendering with hardware acceleration");
     }
     
     @Override

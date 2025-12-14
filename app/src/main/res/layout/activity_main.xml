@@ -10,6 +10,8 @@
         android:id="@+id/textureView"
         android:layout_width="0dp"
         android:layout_height="0dp"
+        android:contentDescription="@string/camera_preview_description"
+        android:importantForAccessibility="yes"
         app:layout_constraintBottom_toTopOf="@+id/controlPanel"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -97,6 +99,8 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_vertical"
+            android:contentDescription="@string/processing_mode_description"
+            android:importantForAccessibility="yes"
             android:minWidth="120dp" />
 
     </LinearLayout>
@@ -120,6 +124,8 @@
             android:layout_height="wrap_content"
             android:textOn="Hide Camera"
             android:textOff="Show Camera"
+            android:contentDescription="@string/toggle_camera_description"
+            android:importantForAccessibility="yes"
             android:layout_marginEnd="16dp"
             android:background="@drawable/toggle_button_background" />
 
@@ -128,6 +134,8 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Rotate 90°"
+            android:contentDescription="@string/rotate_camera_description"
+            android:importantForAccessibility="yes"
             android:background="@drawable/button_background"
             android:layout_marginEnd="16dp" />
 
@@ -140,6 +148,8 @@
         android:layout_height="wrap_content"
         android:layout_margin="16dp"
         android:src="@drawable/ic_performance_24"
+        android:contentDescription="@string/performance_toggle_description"
+        android:importantForAccessibility="yes"
         app:layout_constraintBottom_toTopOf="@+id/controlPanel"
         app:layout_constraintEnd_toEndOf="parent"
         app:fabSize="mini" />

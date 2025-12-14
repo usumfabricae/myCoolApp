@@ -5,6 +5,7 @@
 - **Android Gradle Plugin**: 8.1.2
 - **Java**: Version 17 (required for AGP 8.1.2)
 - **Android Studio**: Arctic Fox or later
+- Build System is only available as part of automated CI/CD
 
 ## Android Configuration
 - **Compile SDK**: 34
@@ -57,6 +58,7 @@ git push origin v1.0.0
 ```
 
 ### Reference Commands (CI/CD Only)
+You can't run gradlew locally. It can only be run as part of CI/CD
 ```bash
 # These run in CI/CD pipeline only - DO NOT run locally
 ./gradlew assembleDebug

@@ -7,6 +7,8 @@ definitions:
       - ~/.gradle/caches
       - ~/.android/build-cache
       - ~/.m2/repository
+      - opencv/src/main/jniLibs  # Cache OpenCV native libraries
+      - opencv/src/main/java     # Cache OpenCV Java sources
       
   common_environment: &common_environment
     vars:
@@ -334,16 +336,38 @@ workflows:
           source $CM_BUILD_DIR/android_env.sh
           cd "$ANDROID_PROJECT_DIR"
           
-          echo "=== SETTING UP OPENCV ANDROID SDK USING SETUP SCRIPT ==="
+          echo "=== SETTING UP OPENCV ANDROID SDK WITH CACHING ==="
           
-          # Make the setup script executable
-          if [ -f "scripts/setup-opencv.sh" ]; then
-            chmod +x scripts/setup-opencv.sh
-            echo "✅ Found OpenCV setup script"
+          # Check if OpenCV libraries are already cached
+          OPENCV_CACHED=false
+          if [ -d "opencv/src/main/jniLibs" ] && [ -d "opencv/src/main/java" ]; then
+            JAVA_FILES=$(find opencv/src/main/java -name "*.java" 2>/dev/null | wc -l)
+            NATIVE_LIBS=$(find opencv/src/main/jniLibs -name "*.so" 2>/dev/null | wc -l)
             
-            # Run the setup script with enhanced error reporting
-            if ./scripts/setup-opencv.sh; then
-              echo "✅ OpenCV setup script completed successfully"
+            echo "Checking cached OpenCV libraries..."
+            echo "  Java files found: $JAVA_FILES"
+            echo "  Native libraries found: $NATIVE_LIBS"
+            
+            if [ "$JAVA_FILES" -gt 100 ] && [ "$NATIVE_LIBS" -gt 4 ]; then
+              echo "✅ OpenCV libraries found in cache - skipping download"
+              OPENCV_CACHED=true
+            else
+              echo "⚠️  Cached OpenCV libraries incomplete - will download"
+            fi
+          else
+            echo "ℹ️  No cached OpenCV libraries found - will download"
+          fi
+          
+          # Only download if not cached
+          if [ "$OPENCV_CACHED" = false ]; then
+            # Make the setup script executable
+            if [ -f "scripts/setup-opencv.sh" ]; then
+              chmod +x scripts/setup-opencv.sh
+              echo "✅ Found OpenCV setup script"
+              
+              # Run the setup script with enhanced error reporting
+              if ./scripts/setup-opencv.sh; then
+                echo "✅ OpenCV setup script completed successfully"
               
               # Immediate verification of setup results
               echo "Verifying OpenCV setup results..."
@@ -455,18 +479,37 @@ workflows:
                   echo "  $arch_name: NOT FOUND"
                 fi
               done
+              else
+                echo "❌ OpenCV setup script failed"
+                echo "Checking for partial setup..."
+                ls -la opencv/src/main/ || echo "OpenCV main directory not accessible"
+                exit 1
+              fi
             else
-              echo "❌ OpenCV setup script failed"
-              echo "Checking for partial setup..."
-              ls -la opencv/src/main/ || echo "OpenCV main directory not accessible"
+              echo "❌ OpenCV setup script not found at scripts/setup-opencv.sh"
+              echo "Available files in scripts directory:"
+              ls -la scripts/ || echo "Scripts directory not found"
               exit 1
             fi
           else
-            echo "❌ OpenCV setup script not found at scripts/setup-opencv.sh"
-            echo "Available files in scripts directory:"
-            ls -la scripts/ || echo "Scripts directory not found"
+            echo "✅ Using cached OpenCV libraries - download skipped"
+          fi
+          
+          # Verify OpenCV is available (whether cached or freshly downloaded)
+          echo "=== FINAL OPENCV VERIFICATION ==="
+          JAVA_FILES=$(find opencv/src/main/java -name "*.java" 2>/dev/null | wc -l)
+          NATIVE_LIBS=$(find opencv/src/main/jniLibs -name "*.so" 2>/dev/null | wc -l)
+          
+          echo "Final OpenCV status:"
+          echo "  Java files: $JAVA_FILES"
+          echo "  Native libraries: $NATIVE_LIBS"
+          
+          if [ "$JAVA_FILES" -eq 0 ] || [ "$NATIVE_LIBS" -eq 0 ]; then
+            echo "❌ OpenCV setup failed - missing required files"
             exit 1
           fi
+          
+          echo "✅ OpenCV libraries ready for build (cached: $OPENCV_CACHED)"
       
       - name: Validate OpenCV integration
         script: |

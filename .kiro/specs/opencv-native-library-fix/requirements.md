@@ -139,3 +139,16 @@ nhanced Camera Stream Requirements
 2. WHEN building the application THEN performance tests SHALL verify frame rate and memory usage targets
 3. WHEN deploying to CI/CD THEN integration tests SHALL validate end-to-end camera stream functionality
 4. WHEN testing on different devices THEN compatibility tests SHALL verify functionality across Android versions and architectures
+
+### Requirement 13
+
+**User Story:** As a developer, I want to minimize framebuffer copies in the processing pipeline, so that CPU usage is reduced and performance is optimized.
+
+#### Acceptance Criteria
+
+1. WHEN processing a camera frame THEN the system SHALL minimize memory copies to no more than 2 copies per frame (Image→Mat conversion + final display copy)
+2. WHEN using buffer pooling THEN the system SHALL process frames in-place without copying to pooled buffers
+3. WHEN passing frames to callbacks THEN the system SHALL transfer ownership instead of cloning the Mat object
+4. WHEN converting Mat to Bitmap for display THEN the system SHALL use proper synchronization instead of defensive cloning
+5. WHEN in passthrough or fallback mode THEN the system SHALL avoid unnecessary clone operations
+6. WHEN measuring CPU usage THEN framebuffer operations SHALL account for less than 30% of total processing time

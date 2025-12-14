@@ -26,4 +26,12 @@
         <item>Blur</item>
         <item>Sharpen</item>
     </string-array>
+    
+    <!-- Accessibility strings -->
+    <string name="camera_preview_description">Camera preview showing real-time video feed with OpenCV processing</string>
+    <string name="toggle_camera_description">Toggle button to show or hide camera preview. Camera processing continues in background when hidden.</string>
+    <string name="rotate_camera_description">Rotate camera display by 90 degrees clockwise. Cycles through 0, 90, 180, and 270 degrees.</string>
+    <string name="processing_mode_description">Select image processing mode. Options include passthrough, grayscale, edge detection, color spaces, blur, and sharpen.</string>
+    <string name="performance_toggle_description">Toggle performance metrics overlay showing FPS, processing time, memory usage, and frame drops</string>
+    <string name="performance_overlay_description">Performance metrics overlay</string>
 </resources>

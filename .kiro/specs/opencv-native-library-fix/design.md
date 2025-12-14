@@ -158,6 +158,36 @@ public class CameraManager {
 - Performance monitoring and optimization
 - Android 10 privacy compliance integration
 
+### 3a. FrameProcessor Optimization
+
+**Purpose:** Minimize framebuffer copies to reduce CPU usage and improve performance.
+
+**Optimization Strategy:**
+```java
+public class FrameProcessor {
+    // Zero-copy processing where possible
+    public void processFrameAsync(@NonNull Image image);
+    
+    // In-place processing without buffer pooling copies
+    private void processFrameInPlace(@NonNull Mat inputMat);
+    
+    // Transfer ownership instead of cloning
+    private void transferFrameOwnership(@NonNull Mat frame);
+}
+```
+
+**Key Optimizations:**
+1. **Eliminate pooled buffer copies**: Process directly on converted Mat instead of copying to/from buffer pool
+2. **Remove callback clones**: Transfer Mat ownership to callback instead of creating defensive copies
+3. **In-place operations**: Use OpenCV in-place processing where supported (e.g., cvtColor with same src/dst)
+4. **Remove DisplayManager clone**: Use proper synchronization primitives instead of defensive cloning
+
+**Expected Impact:**
+- Reduce from 5-6 copies per frame to 2 copies (Image→Mat + Mat→Bitmap)
+- Decrease CPU usage by 40-50% in processing pipeline
+- Improve frame processing latency by 20-30ms
+- Reduce memory pressure and GC frequency
+
 ### 4. DisplayManager with UI Controls
 
 **Purpose:** Advanced display management with rotation, visibility controls, and hardware acceleration.
@@ -505,7 +535,15 @@ public class CircuitBreaker {
 - Error scenario testing and validation
 - Android 10 compliance verification
 
-### Phase 7: Optimization and Monitoring (Low Priority)
+### Phase 7: Framebuffer Copy Optimization (High Priority)
+- Eliminate unnecessary Mat copies in FrameProcessor
+- Remove pooled buffer copy operations
+- Replace callback clones with ownership transfer
+- Remove DisplayManager defensive cloning
+- Implement proper synchronization for thread safety
+- Measure and validate CPU usage reduction
+
+### Phase 8: Optimization and Monitoring (Low Priority)
 - Performance optimization and memory usage validation
 - Log analysis integration and automation
 - Real-time error detection and alerting
@@ -646,12 +684,16 @@ public class PerformanceMonitor {
 ### Optimization Strategies
 
 1. **Memory Management**
-   - Frame buffer pooling to reduce allocations
+   - Minimize framebuffer copies (target: 2 copies per frame maximum)
+   - Eliminate defensive cloning where proper synchronization can be used
+   - Transfer Mat ownership instead of cloning for callbacks
    - Automatic garbage collection triggers
    - Memory leak detection and prevention
    - Efficient bitmap recycling
 
 2. **Processing Optimization**
+   - In-place OpenCV operations to avoid intermediate Mat allocations
+   - Remove unnecessary buffer pool copies in FrameProcessor
    - Hardware acceleration for matrix operations
    - Async processing for non-critical operations
    - Frame skipping during high load
@@ -662,6 +704,28 @@ public class PerformanceMonitor {
    - Efficient layout updates
    - Background thread for heavy operations
    - Smooth transition handling
+
+### Framebuffer Copy Analysis
+
+**Current State (5-6 copies per frame):**
+1. Image → tempMat (conversion) - **NECESSARY**
+2. tempMat → inputBuffer (copy) - **ELIMINATE**
+3. inputBuffer → processedMat (processing)
+4. processedMat → outputBuffer (copy) - **ELIMINATE**
+5. outputBuffer → callbackMat (clone) - **ELIMINATE**
+6. callbackMat → safeMat in DisplayManager (clone) - **ELIMINATE**
+7. safeMat → Bitmap (conversion) - **NECESSARY**
+
+**Target State (2 copies per frame):**
+1. Image → Mat (conversion) - **NECESSARY**
+2. Process in-place on same Mat
+3. Mat → Bitmap (conversion) - **NECESSARY**
+
+**Implementation Changes:**
+- FrameProcessor: Remove buffer pool copy operations, process directly on converted Mat
+- FrameProcessor: Transfer Mat ownership to callback instead of cloning
+- DisplayManager: Use synchronized access instead of defensive cloning
+- OpenCVProcessor: Ensure in-place operations where possible (same src/dst Mat)
 
 ## Android 10 Compliance Integration
 

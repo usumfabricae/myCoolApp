@@ -339,11 +339,12 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
                         displayManager.updateFrame(processedFrame);
                     }
                     
-                    // Clean up resources AFTER display update
+                    // OWNERSHIP: Release Mat after use (Task 21 - ownership transfer pattern)
+                    // We received ownership from FrameProcessor, must release when done
                     processedFrame.release();
                 });
                 
-                // Clean up original image immediately
+                // OWNERSHIP: Close Image after use (ownership transfer pattern)
                 originalImage.close();
             }
             
