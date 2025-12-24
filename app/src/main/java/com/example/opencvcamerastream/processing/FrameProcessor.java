@@ -39,6 +39,11 @@ public class FrameProcessor {
     private final FrameBuffer frameBuffer; // Kept for backward compatibility, but no longer used for pooling
     private ProcessingCallback processingCallback;
     
+    // Zero-copy optimization components (Task 24)
+    private final ZeroCopyProcessor zeroCopyProcessor;
+    private final CopyOperationTracker copyTracker;
+    private volatile boolean useZeroCopyPath = true; // Enable zero-copy by default
+    
     // Threading and queue management
     private HandlerThread processingThread;
     private Handler processingHandler;
@@ -120,7 +125,12 @@ public class FrameProcessor {
     public FrameProcessor(@NonNull OpenCVProcessor openCVProcessor) {
         this.openCVProcessor = openCVProcessor;
         this.frameBuffer = new FrameBuffer();
-        Log.d(TAG, "FrameProcessor created with FrameBuffer");
+        
+        // Initialize zero-copy optimization components (Task 24)
+        this.zeroCopyProcessor = new ZeroCopyProcessor(openCVProcessor);
+        this.copyTracker = new CopyOperationTracker();
+        
+        Log.d(TAG, "FrameProcessor created with FrameBuffer and zero-copy optimization");
     }
     
     /**
@@ -131,7 +141,12 @@ public class FrameProcessor {
     public FrameProcessor(@NonNull OpenCVProcessor openCVProcessor, @NonNull FrameBuffer frameBuffer) {
         this.openCVProcessor = openCVProcessor;
         this.frameBuffer = frameBuffer;
-        Log.d(TAG, "FrameProcessor created with custom FrameBuffer");
+        
+        // Initialize zero-copy optimization components (Task 24)
+        this.zeroCopyProcessor = new ZeroCopyProcessor(openCVProcessor);
+        this.copyTracker = new CopyOperationTracker();
+        
+        Log.d(TAG, "FrameProcessor created with custom FrameBuffer and zero-copy optimization");
     }
     
     /**
@@ -160,6 +175,12 @@ public class FrameProcessor {
         }
         
         try {
+            // Initialize zero-copy processor (Task 24)
+            if (!zeroCopyProcessor.initialize()) {
+                Log.w(TAG, "Zero-copy processor initialization failed, falling back to standard processing");
+                useZeroCopyPath = false;
+            }
+            
             // Start background processing thread
             processingThread = new HandlerThread(PROCESSING_THREAD_NAME);
             processingThread.start();
@@ -172,7 +193,7 @@ public class FrameProcessor {
             // Post the processing runnable
             processingHandler.post(processingRunnable);
             
-            Log.i(TAG, "Frame processing pipeline started successfully");
+            Log.i(TAG, "Frame processing pipeline started successfully with zero-copy optimization: " + useZeroCopyPath);
             return true;
             
         } catch (Exception e) {
@@ -210,9 +231,18 @@ public class FrameProcessor {
         // Clear frame buffer and release resources
         frameBuffer.clear();
         
+        // Release zero-copy processor (Task 24)
+        zeroCopyProcessor.release();
+        
         // Log final performance metrics
         logPerformanceMetrics(true);
         frameBuffer.logStatus();
+        
+        // Log zero-copy optimization metrics
+        ZeroCopyProcessor.ZeroCopyPerformanceMetrics zeroCopyMetrics = zeroCopyProcessor.getPerformanceMetrics();
+        CopyOperationTracker.CopyOperationMetrics copyMetrics = copyTracker.getMetrics();
+        Log.i(TAG, "Zero-copy optimization metrics: " + zeroCopyMetrics);
+        Log.i(TAG, "Copy operation metrics: " + copyMetrics);
         
         Log.i(TAG, "Frame processing pipeline stopped");
     }
@@ -287,21 +317,105 @@ public class FrameProcessor {
     
     /**
      * Internal method to process a single frame
-     * OPTIMIZED: Eliminated buffer pool copies for improved performance
-     * - Removed tempMat.copyTo(inputBuffer) - saves 2-5ms per frame
-     * - Removed processedMat.copyTo(outputBuffer) - saves 2-5ms per frame
-     * - Process directly on converted Mat without intermediate pooling
+     * OPTIMIZED (Task 24): Implements zero-copy processing path
+     * - Image→Mat→Process→Bitmap with only 2 necessary copies
+     * - Eliminated buffer pool copies for improved performance
+     * - Uses ownership transfer pattern instead of defensive cloning
      * 
      * @param frameData The frame data to process
      */
     private void processFrameInternal(@NonNull FrameData frameData) {
         Image image = frameData.image;
         long startTime = System.currentTimeMillis();
+        
+        copyTracker.startFrame();
+        
+        try {
+            if (useZeroCopyPath && zeroCopyProcessor.isInitialized()) {
+                // Use optimized zero-copy processing path (Task 24)
+                processFrameZeroCopy(image, startTime);
+            } else {
+                // Fallback to legacy processing path
+                processFrameLegacy(image, startTime);
+            }
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error in frame processing", e);
+            
+            if (processingCallback != null) {
+                processingCallback.onProcessingFailed(e, image);
+            } else {
+                image.close();
+            }
+        }
+    }
+    
+    /**
+     * Process frame using zero-copy optimization (Task 24)
+     */
+    private void processFrameZeroCopy(@NonNull Image image, long startTime) {
+        zeroCopyProcessor.processFrameZeroCopy(image, new ZeroCopyProcessor.ZeroCopyCallback() {
+            @Override
+            public void onFrameProcessed(@NonNull Mat processedMat, @NonNull Bitmap displayBitmap,
+                                       @NonNull Image originalImage, 
+                                       @NonNull ZeroCopyProcessor.FrameProcessingMetrics metrics) {
+                
+                long processingTime = System.currentTimeMillis() - startTime;
+                totalFramesProcessed++;
+                
+                // Track copy operations
+                copyTracker.recordCopyOperation(CopyOperationTracker.CopyType.IMAGE_TO_MAT, 
+                        metrics.imageToMatTimeMs, 0);
+                copyTracker.recordCopyOperation(CopyOperationTracker.CopyType.MAT_TO_BITMAP, 
+                        metrics.matToBitmapTimeMs, 0);
+                
+                Log.v(TAG, "Zero-copy frame processed successfully in " + processingTime + "ms: " + metrics);
+                
+                // Convert to legacy callback format for compatibility
+                if (processingCallback != null) {
+                    processingCallback.onFrameProcessed(processedMat, originalImage, processingTime);
+                    // Note: processedMat ownership transferred to callback
+                } else {
+                    // Clean up resources if no callback
+                    processedMat.release();
+                    displayBitmap.recycle();
+                    originalImage.close();
+                }
+            }
+            
+            @Override
+            public void onProcessingFailed(@NonNull Exception error, @Nullable Image originalImage) {
+                Log.w(TAG, "Zero-copy processing failed, falling back to legacy path", error);
+                
+                // Fallback to legacy processing
+                if (originalImage != null) {
+                    try {
+                        processFrameLegacy(originalImage, startTime);
+                    } catch (Exception fallbackError) {
+                        Log.e(TAG, "Legacy fallback also failed", fallbackError);
+                        if (processingCallback != null) {
+                            processingCallback.onProcessingFailed(fallbackError, originalImage);
+                        } else {
+                            originalImage.close();
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    /**
+     * Process frame using legacy path (fallback)
+     */
+    private void processFrameLegacy(@NonNull Image image, long startTime) {
         Mat inputMat = null;
         
         try {
             // Convert Image to Mat - NECESSARY COPY (Image→Mat conversion)
+            long copyStart = System.currentTimeMillis();
             inputMat = OpenCVProcessor.imageToMat(image);
+            long copyTime = System.currentTimeMillis() - copyStart;
+            copyTracker.recordCopyOperation(CopyOperationTracker.CopyType.IMAGE_TO_MAT, copyTime, 0);
             
             if (inputMat.empty()) {
                 Log.w(TAG, "Converted Mat is empty, skipping frame");
@@ -322,6 +436,7 @@ public class FrameProcessor {
             if (processedMat == null || processedMat.empty()) {
                 Log.w(TAG, "Processed Mat is null or empty, using original");
                 processedMat = inputMat.clone();
+                copyTracker.recordCopyOperation(CopyOperationTracker.CopyType.MAT_CLONE, 0, 0);
             }
             
             // Release inputMat if it's different from processedMat
@@ -334,7 +449,7 @@ public class FrameProcessor {
             long processingTime = System.currentTimeMillis() - startTime;
             totalFramesProcessed++;
             
-            Log.v(TAG, "Frame processed successfully in " + processingTime + "ms (optimized - no copies)");
+            Log.v(TAG, "Legacy frame processed successfully in " + processingTime + "ms");
             
             // Notify callback with processed frame
             // OPTIMIZED (Task 21): Ownership transfer pattern - no clone needed
@@ -349,18 +464,14 @@ public class FrameProcessor {
             }
             
         } catch (Exception e) {
-            Log.e(TAG, "Error processing frame", e);
+            Log.e(TAG, "Error processing frame in legacy path", e);
             
             // Clean up inputMat if still allocated
             if (inputMat != null) {
                 inputMat.release();
             }
             
-            if (processingCallback != null) {
-                processingCallback.onProcessingFailed(e, image);
-            } else {
-                image.close();
-            }
+            throw e; // Re-throw to be handled by caller
         }
     }
     
@@ -443,6 +554,59 @@ public class FrameProcessor {
      */
     public FrameBuffer getFrameBuffer() {
         return frameBuffer;
+    }
+    
+    /**
+     * Enable or disable zero-copy processing path (Task 24)
+     * 
+     * @param enabled true to use zero-copy optimization, false to use legacy path
+     */
+    public void setZeroCopyEnabled(boolean enabled) {
+        useZeroCopyPath = enabled && zeroCopyProcessor.isInitialized();
+        Log.d(TAG, "Zero-copy processing " + (useZeroCopyPath ? "enabled" : "disabled"));
+    }
+    
+    /**
+     * Check if zero-copy processing is enabled and available
+     * 
+     * @return true if zero-copy processing is active
+     */
+    public boolean isZeroCopyEnabled() {
+        return useZeroCopyPath && zeroCopyProcessor.isInitialized();
+    }
+    
+    /**
+     * Get zero-copy performance metrics (Task 24)
+     * 
+     * @return ZeroCopyPerformanceMetrics with optimization statistics
+     */
+    public ZeroCopyProcessor.ZeroCopyPerformanceMetrics getZeroCopyMetrics() {
+        return zeroCopyProcessor.getPerformanceMetrics();
+    }
+    
+    /**
+     * Get copy operation tracking metrics (Task 24)
+     * 
+     * @return CopyOperationMetrics with detailed copy statistics
+     */
+    public CopyOperationTracker.CopyOperationMetrics getCopyOperationMetrics() {
+        return copyTracker.getMetrics();
+    }
+    
+    /**
+     * Run stress test to validate zero-copy implementation (Task 24)
+     * 
+     * @return StressTestResults with validation outcomes
+     */
+    public ZeroCopyStressTester.StressTestResults runZeroCopyStressTest() {
+        if (!zeroCopyProcessor.isInitialized()) {
+            Log.w(TAG, "Cannot run stress test - zero-copy processor not initialized");
+            return new ZeroCopyStressTester.StressTestResults(false, 
+                    "Zero-copy processor not initialized", null, null);
+        }
+        
+        ZeroCopyStressTester tester = new ZeroCopyStressTester(zeroCopyProcessor);
+        return tester.runStressTest();
     }
     
     /**
