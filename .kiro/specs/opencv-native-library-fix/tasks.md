@@ -196,6 +196,13 @@
   - _Requirements: Req-13.4_
 
 - [ ] 23. Optimize OpenCVProcessor for in-place operations
+
+
+
+
+
+
+
   - Remove unnecessary clone() calls in passthrough mode (lines 242, 344, 372)
   - Remove clone() calls in fallback scenarios (lines 255, 324, 390)
   - Use in-place OpenCV operations where supported (same src/dst Mat)
