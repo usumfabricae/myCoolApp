@@ -73,13 +73,13 @@ public class CopyOperationTracker {
     }
     
     /**
-     * Record a copy operation with automatic timing
+     * Record a copy operation with automatic timing calculation
      * 
      * @param type The type of copy operation
      * @param startTimeMs Start time of the operation
      * @param sizeBytes Size of data copied
      */
-    public void recordCopyOperation(@NonNull CopyType type, long startTimeMs, long sizeBytes) {
+    public void recordCopyOperationWithTiming(@NonNull CopyType type, long startTimeMs, long sizeBytes) {
         long duration = System.currentTimeMillis() - startTimeMs;
         recordCopyOperation(type, duration, sizeBytes);
     }

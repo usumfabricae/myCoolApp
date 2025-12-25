@@ -325,52 +325,50 @@ public class ZeroCopyStressTester {
     
     /**
      * Mock Image implementation for testing
+     * Uses composition instead of inheritance to avoid constructor visibility issues
      */
-    private static class MockImage extends Image {
+    private static class MockImage {
         private final int width;
         private final int height;
         private final int threadId;
         private final int frameIndex;
         private boolean closed = false;
+        private final MockPlane[] planes;
         
         public MockImage(int width, int height, int threadId, int frameIndex) {
             this.width = width;
             this.height = height;
             this.threadId = threadId;
             this.frameIndex = frameIndex;
-        }
-        
-        @Override
-        public int getFormat() {
-            return android.graphics.ImageFormat.YUV_420_888;
-        }
-        
-        @Override
-        public int getWidth() {
-            return width;
-        }
-        
-        @Override
-        public int getHeight() {
-            return height;
-        }
-        
-        @Override
-        public long getTimestamp() {
-            return System.nanoTime();
-        }
-        
-        @Override
-        public Plane[] getPlanes() {
+            
             // Create mock planes for YUV_420_888 format
-            return new Plane[] {
+            this.planes = new MockPlane[] {
                 new MockPlane(width * height),      // Y plane
                 new MockPlane(width * height / 4),  // U plane
                 new MockPlane(width * height / 4)   // V plane
             };
         }
         
-        @Override
+        public int getFormat() {
+            return android.graphics.ImageFormat.YUV_420_888;
+        }
+        
+        public int getWidth() {
+            return width;
+        }
+        
+        public int getHeight() {
+            return height;
+        }
+        
+        public long getTimestamp() {
+            return System.nanoTime();
+        }
+        
+        public MockPlane[] getPlanes() {
+            return planes;
+        }
+        
         public void close() {
             closed = true;
         }
@@ -379,7 +377,15 @@ public class ZeroCopyStressTester {
             return closed;
         }
         
-        private static class MockPlane extends Plane {
+        public int getThreadId() {
+            return threadId;
+        }
+        
+        public int getFrameIndex() {
+            return frameIndex;
+        }
+        
+        private static class MockPlane {
             private final java.nio.ByteBuffer buffer;
             
             public MockPlane(int size) {
@@ -391,17 +397,14 @@ public class ZeroCopyStressTester {
                 buffer.rewind();
             }
             
-            @Override
             public java.nio.ByteBuffer getBuffer() {
                 return buffer;
             }
             
-            @Override
             public int getPixelStride() {
                 return 1;
             }
             
-            @Override
             public int getRowStride() {
                 return buffer.capacity();
             }

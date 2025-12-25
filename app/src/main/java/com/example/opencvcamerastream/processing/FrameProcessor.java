@@ -1,5 +1,6 @@
 package com.example.opencvcamerastream.processing;
 
+import android.graphics.Bitmap;
 import android.media.Image;
 import android.os.Handler;
 import android.os.HandlerThread;
