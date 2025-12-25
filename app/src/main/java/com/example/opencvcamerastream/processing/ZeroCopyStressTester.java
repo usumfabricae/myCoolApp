@@ -217,57 +217,6 @@ public class ZeroCopyStressTester {
         }
         
         copyTracker.endFrame();
-            @Override
-            public void onFrameProcessed(@NonNull Mat processedMat, @NonNull Bitmap displayBitmap,
-                                       @NonNull Image originalImage, 
-                                       @NonNull ZeroCopyProcessor.FrameProcessingMetrics metrics) {
-                try {
-                    // Validate results
-                    if (processedMat == null || processedMat.empty()) {
-                        failedFrames.incrementAndGet();
-                        Log.w(TAG, "Thread " + threadId + " frame " + frameIndex + ": processed Mat is invalid");
-                        return;
-                    }
-                    
-                    if (displayBitmap == null || displayBitmap.isRecycled()) {
-                        failedFrames.incrementAndGet();
-                        Log.w(TAG, "Thread " + threadId + " frame " + frameIndex + ": display Bitmap is invalid");
-                        return;
-                    }
-                    
-                    // Record successful processing
-                    successfulFrames.incrementAndGet();
-                    totalProcessingTime.addAndGet(metrics.totalTimeMs);
-                    
-                    // Track copy operations
-                    copyTracker.recordCopyOperation(CopyOperationTracker.CopyType.IMAGE_TO_MAT, 
-                            metrics.imageToMatTimeMs, 0);
-                    copyTracker.recordCopyOperation(CopyOperationTracker.CopyType.MAT_TO_BITMAP, 
-                            metrics.matToBitmapTimeMs, 0);
-                    
-                    if (Log.isLoggable(TAG, Log.VERBOSE)) {
-                        Log.v(TAG, "Thread " + threadId + " frame " + frameIndex + " processed: " + metrics);
-                    }
-                    
-                } finally {
-                    // Clean up resources (ownership transfer)
-                    processedMat.release();
-                    displayBitmap.recycle();
-                    originalImage.close();
-                }
-            }
-            
-            @Override
-            public void onProcessingFailed(@NonNull Exception error, Image originalImage) {
-                failedFrames.incrementAndGet();
-                firstError.compareAndSet(null, error);
-                Log.w(TAG, "Thread " + threadId + " frame " + frameIndex + " failed: " + error.getMessage());
-                
-                if (originalImage != null) {
-                    originalImage.close();
-                }
-            }
-        });
     }
     
     /**
