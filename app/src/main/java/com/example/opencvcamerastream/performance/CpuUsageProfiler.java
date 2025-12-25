@@ -9,847 +9,542 @@ import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.List;
-import java.util.ArrayList;
-import java.util.Collections;
 
 /**
- * CpuUsageProfiler measures and validates CPU usage reduction after framebuffer optimizations
+ * CpuUsageProfiler measures and validates CPU usage reduction from framebuffer optimizations
  * 
  * Requirements addressed:
- * - Task 25: Profile CPU usage before and after optimization
  * - Req-13.6: Measure framebuffer operation CPU percentage (target: <30%)
+ * - Task 25: Profile CPU usage before and after optimization
  * - Task 25: Validate frame processing latency improvement (target: 20-30ms reduction)
  * - Task 25: Measure memory pressure and GC frequency reduction
- * - Task 25: Document performance improvements
  * 
  * MEASUREMENT STRATEGY:
  * - Continuous CPU usage monitoring during frame processing
- * - Framebuffer operation timing and CPU cost analysis
- * - Memory pressure tracking with GC frequency measurement
- * - Before/after optimization comparison with statistical validation
- * - Real-time performance metrics with trend analysis
+ * - Separate tracking of framebuffer operations vs total processing
+ * - Memory pressure monitoring through GC frequency tracking
+ * - Frame processing latency measurement with statistical analysis
+ * - Before/after optimization comparison with detailed metrics
  */
 public class CpuUsageProfiler {
     
     private static final String TAG = "CpuUsageProfiler";
     
-    // Measurement configuration
-    private static final int MEASUREMENT_INTERVAL_MS = 100; // Sample every 100ms
-    private static final int MEASUREMENT_WINDOW_SIZE = 300; // Keep 30 seconds of data
-    private static final long WARMUP_PERIOD_MS = 5000; // 5 second warmup before measurements
-    private static final int MIN_SAMPLES_FOR_VALIDATION = 50; // Minimum samples for statistical validation
+    // CPU measurement configuration
+    private static final int CPU_SAMPLE_INTERVAL_MS = 100; // Sample every 100ms
+    private static final int MEASUREMENT_WINDOW_MS = 5000; // 5-second measurement windows
+    private static final int MAX_SAMPLES_PER_WINDOW = MEASUREMENT_WINDOW_MS / CPU_SAMPLE_INTERVAL_MS;
     
-    // CPU usage thresholds (Requirements)
-    private static final double FRAMEBUFFER_CPU_TARGET_PERCENT = 30.0; // Target: <30%
-    private static final double LATENCY_IMPROVEMENT_TARGET_MS = 25.0; // Target: 20-30ms reduction
-    private static final double CPU_REDUCTION_TARGET_PERCENT = 40.0; // Target: 40-50% reduction
+    // Performance targets from requirements
+    private static final double TARGET_FRAMEBUFFER_CPU_PERCENTAGE = 30.0; // <30% target
+    private static final long TARGET_LATENCY_REDUCTION_MS = 25; // 20-30ms reduction target
+    private static final double TARGET_TOTAL_CPU_REDUCTION = 40.0; // 40-50% reduction target
     
-    // Measurement state
-    private volatile boolean isProfilerActive = false;
-    private volatile boolean isWarmupComplete = false;
-    private long profilingStartTime = 0;
-    private long warmupStartTime = 0;
+    // CPU usage tracking
+    private final AtomicLong totalCpuTimeUs = new AtomicLong(0);
+    private final AtomicLong framebufferCpuTimeUs = new AtomicLong(0);
+    private final AtomicLong measurementStartTime = new AtomicLong(0);
+    private final AtomicLong lastCpuMeasurement = new AtomicLong(0);
     
-    // CPU measurement components
-    private ScheduledExecutorService measurementExecutor;
-    private final ConcurrentLinkedQueue<CpuMeasurement> cpuMeasurements = new ConcurrentLinkedQueue<>();
-    private final ConcurrentLinkedQueue<FrameProcessingMeasurement> frameMeasurements = new ConcurrentLinkedQueue<>();
-    private final ConcurrentLinkedQueue<MemoryMeasurement> memoryMeasurements = new ConcurrentLinkedQueue<>();
+    // Frame processing latency tracking
+    private final AtomicLong totalFrameLatency = new AtomicLong(0);
+    private final AtomicLong frameCount = new AtomicLong(0);
+    private final AtomicLong minLatency = new AtomicLong(Long.MAX_VALUE);
+    private final AtomicLong maxLatency = new AtomicLong(0);
     
-    // Performance tracking
-    private final AtomicLong totalFramesProcessed = new AtomicLong(0);
-    private final AtomicLong totalFramebufferOperations = new AtomicLong(0);
-    private final AtomicLong totalFramebufferTimeMs = new AtomicLong(0);
-    private final AtomicLong totalProcessingTimeMs = new AtomicLong(0);
+    // Memory pressure tracking
     private final AtomicLong gcCount = new AtomicLong(0);
-    private final AtomicLong lastGcTime = new AtomicLong(0);
+    private final AtomicLong totalMemoryAllocated = new AtomicLong(0);
+    private final AtomicLong peakMemoryUsage = new AtomicLong(0);
     
     // Baseline measurements (before optimization)
-    private CpuUsageBaseline baseline;
+    private final AtomicReference<CpuUsageMetrics> baselineMetrics = new AtomicReference<>();
+    
+    // Monitoring state
+    private volatile boolean isMonitoring = false;
+    private ScheduledExecutorService cpuMonitorExecutor;
+    private CpuUsageCallback callback;
     
     /**
-     * CPU measurement data point
+     * Callback interface for CPU usage updates
      */
-    public static class CpuMeasurement {
-        public final long timestamp;
-        public final double cpuUsagePercent;
-        public final double systemCpuPercent;
-        public final long userTimeMs;
-        public final long systemTimeMs;
-        public final int threadCount;
-        
-        public CpuMeasurement(long timestamp, double cpuUsage, double systemCpu, 
-                            long userTime, long systemTime, int threads) {
-            this.timestamp = timestamp;
-            this.cpuUsagePercent = cpuUsage;
-            this.systemCpuPercent = systemCpu;
-            this.userTimeMs = userTime;
-            this.systemTimeMs = systemTime;
-            this.threadCount = threads;
-        }
-        
-        @Override
-        public String toString() {
-            return String.format("CpuMeasurement{time=%d, cpu=%.1f%%, system=%.1f%%, threads=%d}",
-                    timestamp, cpuUsagePercent, systemCpuPercent, threadCount);
-        }
+    public interface CpuUsageCallback {
+        void onCpuUsageUpdate(@NonNull CpuUsageMetrics metrics);
+        void onOptimizationValidated(@NonNull OptimizationResults results);
+        void onPerformanceAlert(@NonNull String alert, @NonNull CpuUsageMetrics metrics);
     }
     
     /**
-     * Frame processing measurement
+     * Comprehensive CPU usage metrics
      */
-    public static class FrameProcessingMeasurement {
-        public final long timestamp;
-        public final long processingTimeMs;
-        public final long framebufferTimeMs;
-        public final int copyOperations;
-        public final boolean usedOptimizedPath;
-        public final double cpuUsageDuringFrame;
-        
-        public FrameProcessingMeasurement(long timestamp, long processingTime, long framebufferTime,
-                                        int copyOps, boolean optimized, double cpuUsage) {
-            this.timestamp = timestamp;
-            this.processingTimeMs = processingTime;
-            this.framebufferTimeMs = framebufferTime;
-            this.copyOperations = copyOps;
-            this.usedOptimizedPath = optimized;
-            this.cpuUsageDuringFrame = cpuUsage;
-        }
-        
-        public double getFramebufferCpuPercent() {
-            return processingTimeMs > 0 ? (double) framebufferTimeMs / processingTimeMs * 100 : 0;
-        }
-        
-        @Override
-        public String toString() {
-            return String.format("FrameMeasurement{time=%d, proc=%dms, fb=%dms (%.1f%%), copies=%d, opt=%s, cpu=%.1f%%}",
-                    timestamp, processingTimeMs, framebufferTimeMs, getFramebufferCpuPercent(), 
-                    copyOperations, usedOptimizedPath, cpuUsageDuringFrame);
-        }
-    }
-    
-    /**
-     * Memory measurement data point
-     */
-    public static class MemoryMeasurement {
-        public final long timestamp;
-        public final long usedMemoryMB;
-        public final long availableMemoryMB;
-        public final long gcCount;
-        public final long gcTimeMs;
-        public final double memoryPressure; // 0.0 to 1.0
-        
-        public MemoryMeasurement(long timestamp, long usedMem, long availMem, 
-                               long gcCount, long gcTime, double pressure) {
-            this.timestamp = timestamp;
-            this.usedMemoryMB = usedMem;
-            this.availableMemoryMB = availMem;
-            this.gcCount = gcCount;
-            this.gcTimeMs = gcTime;
-            this.memoryPressure = pressure;
-        }
-        
-        @Override
-        public String toString() {
-            return String.format("MemoryMeasurement{time=%d, used=%dMB, avail=%dMB, gc=%d, pressure=%.2f}",
-                    timestamp, usedMemoryMB, availableMemoryMB, gcCount, memoryPressure);
-        }
-    }
-    
-    /**
-     * Baseline measurements for comparison
-     */
-    public static class CpuUsageBaseline {
-        public final double averageCpuPercent;
-        public final double averageFramebufferCpuPercent;
-        public final double averageProcessingLatencyMs;
-        public final double averageCopyOperationsPerFrame;
-        public final double averageGcFrequencyPerMinute;
+    public static class CpuUsageMetrics {
         public final long measurementDurationMs;
-        public final int sampleCount;
+        public final double totalCpuPercentage;
+        public final double framebufferCpuPercentage;
+        public final double averageFrameLatencyMs;
+        public final long minFrameLatencyMs;
+        public final long maxFrameLatencyMs;
+        public final long totalFrames;
+        public final double gcFrequencyPerSecond;
+        public final long totalMemoryMB;
+        public final long peakMemoryMB;
+        public final long timestamp;
         
-        public CpuUsageBaseline(double avgCpu, double avgFbCpu, double avgLatency, 
-                              double avgCopies, double avgGcFreq, long duration, int samples) {
-            this.averageCpuPercent = avgCpu;
-            this.averageFramebufferCpuPercent = avgFbCpu;
-            this.averageProcessingLatencyMs = avgLatency;
-            this.averageCopyOperationsPerFrame = avgCopies;
-            this.averageGcFrequencyPerMinute = avgGcFreq;
+        public CpuUsageMetrics(long duration, double totalCpu, double framebufferCpu,
+                             double avgLatency, long minLatency, long maxLatency,
+                             long frames, double gcFreq, long totalMem, long peakMem) {
             this.measurementDurationMs = duration;
-            this.sampleCount = samples;
+            this.totalCpuPercentage = totalCpu;
+            this.framebufferCpuPercentage = framebufferCpu;
+            this.averageFrameLatencyMs = avgLatency;
+            this.minFrameLatencyMs = minLatency;
+            this.maxFrameLatencyMs = maxLatency;
+            this.totalFrames = frames;
+            this.gcFrequencyPerSecond = gcFreq;
+            this.totalMemoryMB = totalMem;
+            this.peakMemoryMB = peakMem;
+            this.timestamp = System.currentTimeMillis();
+        }
+        
+        public boolean meetsFramebufferTarget() {
+            return framebufferCpuPercentage <= TARGET_FRAMEBUFFER_CPU_PERCENTAGE;
+        }
+        
+        public boolean meetsLatencyTarget(CpuUsageMetrics baseline) {
+            if (baseline == null) return false;
+            double improvement = baseline.averageFrameLatencyMs - this.averageFrameLatencyMs;
+            return improvement >= TARGET_LATENCY_REDUCTION_MS;
+        }
+        
+        public boolean meetsCpuReductionTarget(CpuUsageMetrics baseline) {
+            if (baseline == null) return false;
+            double reduction = ((baseline.totalCpuPercentage - this.totalCpuPercentage) / baseline.totalCpuPercentage) * 100;
+            return reduction >= TARGET_TOTAL_CPU_REDUCTION;
         }
         
         @Override
         public String toString() {
-            return String.format("Baseline{cpu=%.1f%%, fbCpu=%.1f%%, latency=%.1fms, copies=%.1f, gcFreq=%.1f/min, samples=%d}",
-                    averageCpuPercent, averageFramebufferCpuPercent, averageProcessingLatencyMs, 
-                    averageCopyOperationsPerFrame, averageGcFrequencyPerMinute, sampleCount);
+            return String.format("CpuMetrics{totalCpu=%.1f%%, framebufferCpu=%.1f%%, " +
+                    "avgLatency=%.1fms, frames=%d, gcFreq=%.2f/s, memory=%dMB}",
+                    totalCpuPercentage, framebufferCpuPercentage, averageFrameLatencyMs,
+                    totalFrames, gcFrequencyPerSecond, totalMemoryMB);
         }
     }
     
     /**
-     * Performance validation results
+     * Optimization validation results
      */
-    public static class PerformanceValidationResults {
-        public final boolean meetsFramebufferCpuTarget;
-        public final boolean meetsLatencyImprovementTarget;
-        public final boolean meetsCpuReductionTarget;
-        public final boolean meetsMemoryPressureTarget;
-        
-        public final double currentFramebufferCpuPercent;
+    public static class OptimizationResults {
+        public final CpuUsageMetrics baseline;
+        public final CpuUsageMetrics optimized;
+        public final double cpuReductionPercentage;
         public final double latencyImprovementMs;
-        public final double cpuReductionPercent;
-        public final double memoryPressureReduction;
-        
-        public final CpuUsageBaseline baseline;
-        public final CpuUsageBaseline current;
-        
+        public final double memoryReductionPercentage;
+        public final double gcFrequencyReduction;
+        public final boolean meetsAllTargets;
         public final String validationSummary;
-        public final List<String> recommendations;
         
-        public PerformanceValidationResults(boolean fbTarget, boolean latencyTarget, boolean cpuTarget, boolean memTarget,
-                                          double fbCpu, double latencyImpr, double cpuReduction, double memReduction,
-                                          CpuUsageBaseline baseline, CpuUsageBaseline current,
-                                          String summary, List<String> recommendations) {
-            this.meetsFramebufferCpuTarget = fbTarget;
-            this.meetsLatencyImprovementTarget = latencyTarget;
-            this.meetsCpuReductionTarget = cpuTarget;
-            this.meetsMemoryPressureTarget = memTarget;
-            this.currentFramebufferCpuPercent = fbCpu;
-            this.latencyImprovementMs = latencyImpr;
-            this.cpuReductionPercent = cpuReduction;
-            this.memoryPressureReduction = memReduction;
+        public OptimizationResults(@NonNull CpuUsageMetrics baseline, @NonNull CpuUsageMetrics optimized) {
             this.baseline = baseline;
-            this.current = current;
-            this.validationSummary = summary;
-            this.recommendations = new ArrayList<>(recommendations);
+            this.optimized = optimized;
+            
+            // Calculate improvements
+            this.cpuReductionPercentage = ((baseline.totalCpuPercentage - optimized.totalCpuPercentage) / baseline.totalCpuPercentage) * 100;
+            this.latencyImprovementMs = baseline.averageFrameLatencyMs - optimized.averageFrameLatencyMs;
+            this.memoryReductionPercentage = ((baseline.totalMemoryMB - optimized.totalMemoryMB) / (double) baseline.totalMemoryMB) * 100;
+            this.gcFrequencyReduction = baseline.gcFrequencyPerSecond - optimized.gcFrequencyPerSecond;
+            
+            // Check if all targets are met
+            boolean framebufferTarget = optimized.meetsFramebufferTarget();
+            boolean latencyTarget = optimized.meetsLatencyTarget(baseline);
+            boolean cpuTarget = optimized.meetsCpuReductionTarget(baseline);
+            this.meetsAllTargets = framebufferTarget && latencyTarget && cpuTarget;
+            
+            // Generate validation summary
+            this.validationSummary = generateValidationSummary(framebufferTarget, latencyTarget, cpuTarget);
         }
         
-        public boolean meetsAllTargets() {
-            return meetsFramebufferCpuTarget && meetsLatencyImprovementTarget && 
-                   meetsCpuReductionTarget && meetsMemoryPressureTarget;
+        private String generateValidationSummary(boolean framebufferTarget, boolean latencyTarget, boolean cpuTarget) {
+            StringBuilder summary = new StringBuilder();
+            summary.append("Optimization Validation Results:\n");
+            summary.append(String.format("• CPU Reduction: %.1f%% %s (target: %.1f%%)\n", 
+                    cpuReductionPercentage, cpuTarget ? "✓" : "✗", TARGET_TOTAL_CPU_REDUCTION));
+            summary.append(String.format("• Latency Improvement: %.1fms %s (target: %dms)\n", 
+                    latencyImprovementMs, latencyTarget ? "✓" : "✗", TARGET_LATENCY_REDUCTION_MS));
+            summary.append(String.format("• Framebuffer CPU: %.1f%% %s (target: <%.1f%%)\n", 
+                    optimized.framebufferCpuPercentage, framebufferTarget ? "✓" : "✗", TARGET_FRAMEBUFFER_CPU_PERCENTAGE));
+            summary.append(String.format("• Memory Reduction: %.1f%%\n", memoryReductionPercentage));
+            summary.append(String.format("• GC Frequency Reduction: %.2f/s\n", gcFrequencyReduction));
+            summary.append(String.format("Overall: %s", meetsAllTargets ? "ALL TARGETS MET ✓" : "TARGETS NOT MET ✗"));
+            return summary.toString();
         }
         
         @Override
         public String toString() {
-            return String.format("ValidationResults{fbCpu=%.1f%% (target<%.1f%%), latencyImpr=%.1fms (target>%.1fms), " +
-                               "cpuReduction=%.1f%% (target>%.1f%%), allTargets=%s}",
-                    currentFramebufferCpuPercent, FRAMEBUFFER_CPU_TARGET_PERCENT,
-                    latencyImprovementMs, LATENCY_IMPROVEMENT_TARGET_MS,
-                    cpuReductionPercent, CPU_REDUCTION_TARGET_PERCENT,
-                    meetsAllTargets());
+            return String.format("OptimizationResults{cpuReduction=%.1f%%, latencyImprovement=%.1fms, " +
+                    "memoryReduction=%.1f%%, targetsMetr=%s}",
+                    cpuReductionPercentage, latencyImprovementMs, memoryReductionPercentage, meetsAllTargets);
         }
     }
     
     public CpuUsageProfiler() {
-        Log.d(TAG, "CpuUsageProfiler created with targets: framebuffer CPU <30%, latency improvement >25ms, CPU reduction >40%");
+        Log.d(TAG, "CpuUsageProfiler initialized with targets: " +
+                "framebuffer CPU <" + TARGET_FRAMEBUFFER_CPU_PERCENTAGE + "%, " +
+                "latency reduction " + TARGET_LATENCY_REDUCTION_MS + "ms, " +
+                "total CPU reduction " + TARGET_TOTAL_CPU_REDUCTION + "%");
     }
     
     /**
-     * Start CPU usage profiling
-     * 
-     * @param withWarmup true to include warmup period, false to start measuring immediately
+     * Set callback for CPU usage updates
      */
-    public void startProfiling(boolean withWarmup) {
-        if (isProfilerActive) {
-            Log.w(TAG, "Profiler already active");
+    public void setCallback(@Nullable CpuUsageCallback callback) {
+        this.callback = callback;
+    }
+    
+    /**
+     * Start CPU usage monitoring
+     */
+    public void startMonitoring() {
+        if (isMonitoring) {
+            Log.w(TAG, "CPU monitoring already started");
             return;
         }
         
-        Log.i(TAG, "Starting CPU usage profiling" + (withWarmup ? " with warmup" : ""));
-        
-        isProfilerActive = true;
-        isWarmupComplete = !withWarmup;
-        profilingStartTime = System.currentTimeMillis();
-        warmupStartTime = withWarmup ? profilingStartTime : 0;
-        
-        // Clear previous measurements
-        cpuMeasurements.clear();
-        frameMeasurements.clear();
-        memoryMeasurements.clear();
+        Log.d(TAG, "Starting CPU usage monitoring");
+        isMonitoring = true;
+        measurementStartTime.set(System.currentTimeMillis());
         
         // Reset counters
-        totalFramesProcessed.set(0);
-        totalFramebufferOperations.set(0);
-        totalFramebufferTimeMs.set(0);
-        totalProcessingTimeMs.set(0);
-        gcCount.set(0);
-        lastGcTime.set(System.currentTimeMillis());
+        resetCounters();
         
-        // Start measurement executor
-        measurementExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "CpuProfiler");
-            t.setDaemon(true);
-            return t;
-        });
+        // Start CPU monitoring thread
+        cpuMonitorExecutor = Executors.newSingleThreadScheduledExecutor();
+        cpuMonitorExecutor.scheduleAtFixedRate(this::sampleCpuUsage, 
+                0, CPU_SAMPLE_INTERVAL_MS, TimeUnit.MILLISECONDS);
         
-        measurementExecutor.scheduleAtFixedRate(this::takeCpuMeasurement, 
-                0, MEASUREMENT_INTERVAL_MS, TimeUnit.MILLISECONDS);
-        measurementExecutor.scheduleAtFixedRate(this::takeMemoryMeasurement, 
-                0, MEASUREMENT_INTERVAL_MS * 2, TimeUnit.MILLISECONDS); // Memory every 200ms
-        
-        Log.i(TAG, "CPU profiling started successfully");
+        Log.i(TAG, "CPU usage monitoring started");
     }
     
     /**
-     * Stop CPU usage profiling
+     * Stop CPU usage monitoring and return final metrics
      */
-    public void stopProfiling() {
-        if (!isProfilerActive) {
-            Log.w(TAG, "Profiler not active");
-            return;
-        }
-        
-        Log.i(TAG, "Stopping CPU usage profiling");
-        
-        isProfilerActive = false;
-        isWarmupComplete = false;
-        
-        if (measurementExecutor != null) {
-            measurementExecutor.shutdown();
-            try {
-                if (!measurementExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
-                    measurementExecutor.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                measurementExecutor.shutdownNow();
-                Thread.currentThread().interrupt();
-            }
-            measurementExecutor = null;
-        }
-        
-        // Log final summary
-        logProfilingSummary();
-        
-        Log.i(TAG, "CPU profiling stopped");
-    }
-    
-    /**
-     * Record frame processing measurement
-     * 
-     * @param processingTimeMs Total frame processing time
-     * @param framebufferTimeMs Time spent on framebuffer operations
-     * @param copyOperations Number of copy operations performed
-     * @param usedOptimizedPath Whether optimized processing path was used
-     */
-    public void recordFrameProcessing(long processingTimeMs, long framebufferTimeMs, 
-                                    int copyOperations, boolean usedOptimizedPath) {
-        if (!isProfilerActive || !isWarmupComplete) {
-            return;
-        }
-        
-        totalFramesProcessed.incrementAndGet();
-        totalFramebufferOperations.addAndGet(copyOperations);
-        totalFramebufferTimeMs.addAndGet(framebufferTimeMs);
-        totalProcessingTimeMs.addAndGet(processingTimeMs);
-        
-        // Get current CPU usage for this frame
-        double currentCpuUsage = getCurrentCpuUsage();
-        
-        FrameProcessingMeasurement measurement = new FrameProcessingMeasurement(
-                System.currentTimeMillis(), processingTimeMs, framebufferTimeMs,
-                copyOperations, usedOptimizedPath, currentCpuUsage);
-        
-        frameMeasurements.offer(measurement);
-        
-        // Maintain window size
-        while (frameMeasurements.size() > MEASUREMENT_WINDOW_SIZE) {
-            frameMeasurements.poll();
-        }
-        
-        if (Log.isLoggable(TAG, Log.VERBOSE)) {
-            Log.v(TAG, "Frame measurement recorded: " + measurement);
-        }
-    }
-    
-    /**
-     * Set baseline measurements for comparison
-     * 
-     * @param baseline Baseline measurements from before optimization
-     */
-    public void setBaseline(@NonNull CpuUsageBaseline baseline) {
-        this.baseline = baseline;
-        Log.i(TAG, "Baseline set: " + baseline);
-    }
-    
-    /**
-     * Capture current state as baseline
-     * 
-     * @return Current measurements as baseline
-     */
-    @Nullable
-    public CpuUsageBaseline captureBaseline() {
-        if (!isProfilerActive || cpuMeasurements.isEmpty() || frameMeasurements.isEmpty()) {
-            Log.w(TAG, "Cannot capture baseline - insufficient data");
+    public CpuUsageMetrics stopMonitoring() {
+        if (!isMonitoring) {
+            Log.w(TAG, "CPU monitoring not started");
             return null;
         }
         
-        CpuUsageBaseline baseline = calculateCurrentBaseline();
-        setBaseline(baseline);
-        return baseline;
+        Log.d(TAG, "Stopping CPU usage monitoring");
+        isMonitoring = false;
+        
+        if (cpuMonitorExecutor != null) {
+            cpuMonitorExecutor.shutdown();
+            try {
+                if (!cpuMonitorExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
+                    cpuMonitorExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                cpuMonitorExecutor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+            cpuMonitorExecutor = null;
+        }
+        
+        CpuUsageMetrics finalMetrics = getCurrentMetrics();
+        Log.i(TAG, "CPU usage monitoring stopped. Final metrics: " + finalMetrics);
+        
+        return finalMetrics;
     }
     
     /**
-     * Validate performance improvements against targets
-     * 
-     * @return Performance validation results
+     * Record frame processing start time
      */
-    @NonNull
-    public PerformanceValidationResults validatePerformanceImprovements() {
+    public void recordFrameProcessingStart() {
+        // This will be called by the frame processor to mark the start of processing
+        // The actual timing is handled in recordFrameProcessingEnd
+    }
+    
+    /**
+     * Record frame processing completion with latency
+     */
+    public void recordFrameProcessingEnd(long processingStartTime, boolean isFramebufferOperation) {
+        long latency = System.currentTimeMillis() - processingStartTime;
+        
+        frameCount.incrementAndGet();
+        totalFrameLatency.addAndGet(latency);
+        
+        // Update min/max latency
+        updateMinLatency(latency);
+        updateMaxLatency(latency);
+        
+        // If this was a framebuffer operation, add to framebuffer CPU time
+        if (isFramebufferOperation) {
+            framebufferCpuTimeUs.addAndGet(latency * 1000); // Convert to microseconds
+        }
+        
+        if (Log.isLoggable(TAG, Log.VERBOSE)) {
+            Log.v(TAG, "Frame processing recorded: " + latency + "ms" + 
+                    (isFramebufferOperation ? " (framebuffer)" : ""));
+        }
+    }
+    
+    /**
+     * Record memory allocation for tracking memory pressure
+     */
+    public void recordMemoryAllocation(long bytes) {
+        totalMemoryAllocated.addAndGet(bytes);
+        
+        // Update peak memory usage
+        long currentMemory = getCurrentMemoryUsage();
+        updatePeakMemory(currentMemory);
+    }
+    
+    /**
+     * Record garbage collection event
+     */
+    public void recordGarbageCollection() {
+        gcCount.incrementAndGet();
+        
+        if (Log.isLoggable(TAG, Log.VERBOSE)) {
+            Log.v(TAG, "GC event recorded, total: " + gcCount.get());
+        }
+    }
+    
+    /**
+     * Set baseline metrics for comparison (before optimization)
+     */
+    public void setBaselineMetrics(@NonNull CpuUsageMetrics baseline) {
+        baselineMetrics.set(baseline);
+        Log.i(TAG, "Baseline metrics set: " + baseline);
+    }
+    
+    /**
+     * Validate optimization results against baseline
+     */
+    public OptimizationResults validateOptimization() {
+        CpuUsageMetrics baseline = baselineMetrics.get();
         if (baseline == null) {
-            Log.w(TAG, "Cannot validate - no baseline set");
-            return createEmptyValidationResults("No baseline available for comparison");
+            Log.w(TAG, "No baseline metrics available for validation");
+            return null;
         }
         
-        if (!isProfilerActive || frameMeasurements.size() < MIN_SAMPLES_FOR_VALIDATION) {
-            Log.w(TAG, "Cannot validate - insufficient current measurements");
-            return createEmptyValidationResults("Insufficient current measurements for validation");
+        CpuUsageMetrics current = getCurrentMetrics();
+        OptimizationResults results = new OptimizationResults(baseline, current);
+        
+        Log.i(TAG, "Optimization validation completed: " + results);
+        
+        if (callback != null) {
+            callback.onOptimizationValidated(results);
         }
-        
-        CpuUsageBaseline current = calculateCurrentBaseline();
-        
-        // Calculate improvements
-        double latencyImprovement = baseline.averageProcessingLatencyMs - current.averageProcessingLatencyMs;
-        double cpuReduction = ((baseline.averageCpuPercent - current.averageCpuPercent) / baseline.averageCpuPercent) * 100;
-        double memoryPressureReduction = calculateMemoryPressureReduction();
-        
-        // Check targets
-        boolean meetsFramebufferTarget = current.averageFramebufferCpuPercent < FRAMEBUFFER_CPU_TARGET_PERCENT;
-        boolean meetsLatencyTarget = latencyImprovement >= LATENCY_IMPROVEMENT_TARGET_MS;
-        boolean meetsCpuTarget = cpuReduction >= CPU_REDUCTION_TARGET_PERCENT;
-        boolean meetsMemoryTarget = memoryPressureReduction > 0; // Any reduction is good
-        
-        // Generate summary and recommendations
-        String summary = generateValidationSummary(current, latencyImprovement, cpuReduction, memoryPressureReduction);
-        List<String> recommendations = generateRecommendations(current, latencyImprovement, cpuReduction);
-        
-        PerformanceValidationResults results = new PerformanceValidationResults(
-                meetsFramebufferTarget, meetsLatencyTarget, meetsCpuTarget, meetsMemoryTarget,
-                current.averageFramebufferCpuPercent, latencyImprovement, cpuReduction, memoryPressureReduction,
-                baseline, current, summary, recommendations);
-        
-        Log.i(TAG, "Performance validation completed: " + results);
         
         return results;
     }
     
     /**
-     * Get current CPU usage statistics
-     * 
-     * @return Current CPU usage baseline or null if insufficient data
+     * Get current CPU usage metrics
      */
-    @Nullable
-    public CpuUsageBaseline getCurrentCpuUsageStats() {
-        if (!isProfilerActive || cpuMeasurements.isEmpty()) {
-            return null;
-        }
+    public CpuUsageMetrics getCurrentMetrics() {
+        long duration = System.currentTimeMillis() - measurementStartTime.get();
+        long frames = frameCount.get();
         
-        return calculateCurrentBaseline();
-    }
-    
-    /**
-     * Check if profiler is currently active
-     */
-    public boolean isActive() {
-        return isProfilerActive;
-    }
-    
-    /**
-     * Check if warmup period is complete
-     */
-    public boolean isWarmupComplete() {
-        return isWarmupComplete;
-    }
-    
-    /**
-     * Get total frames processed during profiling
-     */
-    public long getTotalFramesProcessed() {
-        return totalFramesProcessed.get();
-    }
-    
-    // Private implementation methods
-    
-    private void takeCpuMeasurement() {
-        try {
-            // Check warmup period
-            if (!isWarmupComplete && warmupStartTime > 0) {
-                long elapsed = System.currentTimeMillis() - warmupStartTime;
-                if (elapsed >= WARMUP_PERIOD_MS) {
-                    isWarmupComplete = true;
-                    Log.d(TAG, "Warmup period complete, starting measurements");
-                }
-                return;
-            }
-            
-            if (!isWarmupComplete) {
-                return;
-            }
-            
-            CpuMeasurement measurement = measureCurrentCpuUsage();
-            if (measurement != null) {
-                cpuMeasurements.offer(measurement);
-                
-                // Maintain window size
-                while (cpuMeasurements.size() > MEASUREMENT_WINDOW_SIZE) {
-                    cpuMeasurements.poll();
-                }
-                
-                if (Log.isLoggable(TAG, Log.VERBOSE)) {
-                    Log.v(TAG, "CPU measurement: " + measurement);
-                }
-            }
-            
-        } catch (Exception e) {
-            Log.e(TAG, "Error taking CPU measurement", e);
-        }
-    }
-    
-    private void takeMemoryMeasurement() {
-        try {
-            if (!isWarmupComplete) {
-                return;
-            }
-            
-            MemoryMeasurement measurement = measureCurrentMemoryUsage();
-            if (measurement != null) {
-                memoryMeasurements.offer(measurement);
-                
-                // Maintain window size
-                while (memoryMeasurements.size() > MEASUREMENT_WINDOW_SIZE / 2) {
-                    memoryMeasurements.poll();
-                }
-                
-                if (Log.isLoggable(TAG, Log.VERBOSE)) {
-                    Log.v(TAG, "Memory measurement: " + measurement);
-                }
-            }
-            
-        } catch (Exception e) {
-            Log.e(TAG, "Error taking memory measurement", e);
-        }
-    }
-    
-    @Nullable
-    private CpuMeasurement measureCurrentCpuUsage() {
-        try {
-            long timestamp = System.currentTimeMillis();
-            
-            // Read /proc/stat for system CPU
-            double systemCpuPercent = readSystemCpuUsage();
-            
-            // Read /proc/self/stat for process CPU
-            ProcessCpuInfo processCpuInfo = readProcessCpuUsage();
-            if (processCpuInfo == null) {
-                return null;
-            }
-            
-            // Calculate process CPU percentage
-            double processCpuPercent = calculateProcessCpuPercent(processCpuInfo);
-            
-            return new CpuMeasurement(timestamp, processCpuPercent, systemCpuPercent,
-                    processCpuInfo.userTime, processCpuInfo.systemTime, processCpuInfo.threadCount);
-            
-        } catch (Exception e) {
-            Log.e(TAG, "Error measuring CPU usage", e);
-            return null;
-        }
-    }
-    
-    @Nullable
-    private MemoryMeasurement measureCurrentMemoryUsage() {
-        try {
-            long timestamp = System.currentTimeMillis();
-            
-            // Get memory info
-            Runtime runtime = Runtime.getRuntime();
-            long maxMemory = runtime.maxMemory() / (1024 * 1024); // MB
-            long totalMemory = runtime.totalMemory() / (1024 * 1024); // MB
-            long freeMemory = runtime.freeMemory() / (1024 * 1024); // MB
-            long usedMemory = totalMemory - freeMemory;
-            long availableMemory = maxMemory - usedMemory;
-            
-            // Calculate memory pressure (0.0 to 1.0)
-            double memoryPressure = (double) usedMemory / maxMemory;
-            
-            // Get GC info
-            long currentGcCount = Debug.getGlobalGcInvocationCount();
-            long gcTimeSinceLastMeasurement = 0;
-            
-            if (gcCount.get() > 0) {
-                gcTimeSinceLastMeasurement = currentGcCount - gcCount.get();
-            }
-            gcCount.set(currentGcCount);
-            
-            return new MemoryMeasurement(timestamp, usedMemory, availableMemory,
-                    currentGcCount, gcTimeSinceLastMeasurement, memoryPressure);
-            
-        } catch (Exception e) {
-            Log.e(TAG, "Error measuring memory usage", e);
-            return null;
-        }
-    }
-    
-    private double getCurrentCpuUsage() {
-        try {
-            ProcessCpuInfo info = readProcessCpuUsage();
-            return info != null ? calculateProcessCpuPercent(info) : 0.0;
-        } catch (Exception e) {
-            return 0.0;
-        }
-    }
-    
-    private static class ProcessCpuInfo {
-        long userTime;
-        long systemTime;
-        int threadCount;
-        long timestamp;
+        // Calculate CPU percentages
+        double totalCpu = calculateTotalCpuPercentage(duration);
+        double framebufferCpu = calculateFramebufferCpuPercentage(duration);
         
-        ProcessCpuInfo(long user, long system, int threads) {
-            this.userTime = user;
-            this.systemTime = system;
-            this.threadCount = threads;
-            this.timestamp = System.currentTimeMillis();
-        }
-    }
-    
-    private ProcessCpuInfo lastProcessCpuInfo = null;
-    
-    @Nullable
-    private ProcessCpuInfo readProcessCpuUsage() {
-        try {
-            int pid = Process.myPid();
-            BufferedReader reader = new BufferedReader(new FileReader("/proc/" + pid + "/stat"));
-            String line = reader.readLine();
-            reader.close();
-            
-            if (line == null) {
-                return null;
-            }
-            
-            String[] parts = line.split("\\s+");
-            if (parts.length < 20) {
-                return null;
-            }
-            
-            // Parse CPU times (in clock ticks)
-            long userTime = Long.parseLong(parts[13]); // utime
-            long systemTime = Long.parseLong(parts[14]); // stime
-            int threadCount = Integer.parseInt(parts[19]); // num_threads
-            
-            return new ProcessCpuInfo(userTime, systemTime, threadCount);
-            
-        } catch (Exception e) {
-            Log.e(TAG, "Error reading process CPU usage", e);
-            return null;
-        }
-    }
-    
-    private double calculateProcessCpuPercent(ProcessCpuInfo currentInfo) {
-        if (lastProcessCpuInfo == null) {
-            lastProcessCpuInfo = currentInfo;
-            return 0.0;
-        }
-        
-        try {
-            long timeDelta = currentInfo.timestamp - lastProcessCpuInfo.timestamp;
-            if (timeDelta <= 0) {
-                return 0.0;
-            }
-            
-            long userDelta = currentInfo.userTime - lastProcessCpuInfo.userTime;
-            long systemDelta = currentInfo.systemTime - lastProcessCpuInfo.systemTime;
-            long totalCpuDelta = userDelta + systemDelta;
-            
-            // Convert clock ticks to milliseconds (assuming 100 ticks per second)
-            long totalCpuTimeMs = totalCpuDelta * 10;
-            
-            double cpuPercent = (double) totalCpuTimeMs / timeDelta * 100;
-            
-            lastProcessCpuInfo = currentInfo;
-            
-            return Math.min(cpuPercent, 100.0); // Cap at 100%
-            
-        } catch (Exception e) {
-            Log.e(TAG, "Error calculating CPU percent", e);
-            return 0.0;
-        }
-    }
-    
-    private double readSystemCpuUsage() {
-        try {
-            BufferedReader reader = new BufferedReader(new FileReader("/proc/stat"));
-            String line = reader.readLine();
-            reader.close();
-            
-            if (line == null || !line.startsWith("cpu ")) {
-                return 0.0;
-            }
-            
-            String[] parts = line.split("\\s+");
-            if (parts.length < 8) {
-                return 0.0;
-            }
-            
-            // Parse CPU times
-            long user = Long.parseLong(parts[1]);
-            long nice = Long.parseLong(parts[2]);
-            long system = Long.parseLong(parts[3]);
-            long idle = Long.parseLong(parts[4]);
-            long iowait = Long.parseLong(parts[5]);
-            long irq = Long.parseLong(parts[6]);
-            long softirq = Long.parseLong(parts[7]);
-            
-            long totalTime = user + nice + system + idle + iowait + irq + softirq;
-            long activeTime = totalTime - idle - iowait;
-            
-            // Simple approximation - would need previous values for accurate calculation
-            return totalTime > 0 ? (double) activeTime / totalTime * 100 : 0.0;
-            
-        } catch (Exception e) {
-            Log.e(TAG, "Error reading system CPU usage", e);
-            return 0.0;
-        }
-    }
-    
-    private CpuUsageBaseline calculateCurrentBaseline() {
-        if (cpuMeasurements.isEmpty() || frameMeasurements.isEmpty()) {
-            return new CpuUsageBaseline(0, 0, 0, 0, 0, 0, 0);
-        }
-        
-        // Calculate CPU averages
-        double avgCpu = cpuMeasurements.stream()
-                .mapToDouble(m -> m.cpuUsagePercent)
-                .average()
-                .orElse(0.0);
-        
-        // Calculate framebuffer CPU averages
-        double avgFramebufferCpu = frameMeasurements.stream()
-                .mapToDouble(FrameProcessingMeasurement::getFramebufferCpuPercent)
-                .average()
-                .orElse(0.0);
-        
-        // Calculate processing latency average
-        double avgLatency = frameMeasurements.stream()
-                .mapToLong(m -> m.processingTimeMs)
-                .average()
-                .orElse(0.0);
-        
-        // Calculate copy operations average
-        double avgCopies = frameMeasurements.stream()
-                .mapToInt(m -> m.copyOperations)
-                .average()
-                .orElse(0.0);
+        // Calculate latency metrics
+        double avgLatency = frames > 0 ? (double) totalFrameLatency.get() / frames : 0;
+        long minLat = minLatency.get() == Long.MAX_VALUE ? 0 : minLatency.get();
+        long maxLat = maxLatency.get();
         
         // Calculate GC frequency
-        double avgGcFreq = calculateGcFrequencyPerMinute();
+        double gcFreq = duration > 0 ? (gcCount.get() * 1000.0) / duration : 0;
         
-        long duration = System.currentTimeMillis() - profilingStartTime;
-        int sampleCount = cpuMeasurements.size();
+        // Get memory usage
+        long totalMem = totalMemoryAllocated.get() / (1024 * 1024); // Convert to MB
+        long peakMem = peakMemoryUsage.get() / (1024 * 1024); // Convert to MB
         
-        return new CpuUsageBaseline(avgCpu, avgFramebufferCpu, avgLatency, avgCopies, avgGcFreq, duration, sampleCount);
+        return new CpuUsageMetrics(duration, totalCpu, framebufferCpu, avgLatency, 
+                minLat, maxLat, frames, gcFreq, totalMem, peakMem);
     }
     
-    private double calculateGcFrequencyPerMinute() {
-        if (memoryMeasurements.isEmpty()) {
-            return 0.0;
-        }
+    /**
+     * Reset all performance counters
+     */
+    public void resetCounters() {
+        totalCpuTimeUs.set(0);
+        framebufferCpuTimeUs.set(0);
+        totalFrameLatency.set(0);
+        frameCount.set(0);
+        minLatency.set(Long.MAX_VALUE);
+        maxLatency.set(0);
+        gcCount.set(0);
+        totalMemoryAllocated.set(0);
+        peakMemoryUsage.set(0);
+        lastCpuMeasurement.set(0);
         
-        long totalGcEvents = memoryMeasurements.stream()
-                .mapToLong(m -> m.gcTimeMs)
-                .sum();
-        
-        long durationMinutes = Math.max(1, (System.currentTimeMillis() - profilingStartTime) / 60000);
-        
-        return (double) totalGcEvents / durationMinutes;
+        Log.d(TAG, "Performance counters reset");
     }
     
-    private double calculateMemoryPressureReduction() {
-        if (baseline == null || memoryMeasurements.isEmpty()) {
-            return 0.0;
+    // Private helper methods
+    
+    private void sampleCpuUsage() {
+        if (!isMonitoring) return;
+        
+        try {
+            long cpuTime = getCurrentCpuTime();
+            if (cpuTime > 0) {
+                totalCpuTimeUs.addAndGet(cpuTime);
+            }
+            
+            // Check for performance alerts
+            CpuUsageMetrics current = getCurrentMetrics();
+            checkPerformanceAlerts(current);
+            
+            // Update callback
+            if (callback != null) {
+                callback.onCpuUsageUpdate(current);
+            }
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error sampling CPU usage", e);
         }
-        
-        double currentAvgPressure = memoryMeasurements.stream()
-                .mapToDouble(m -> m.memoryPressure)
-                .average()
-                .orElse(0.0);
-        
-        // Estimate baseline pressure (would need actual baseline measurements)
-        double estimatedBaselinePressure = 0.7; // Assume 70% baseline pressure
-        
-        return ((estimatedBaselinePressure - currentAvgPressure) / estimatedBaselinePressure) * 100;
     }
     
-    private String generateValidationSummary(CpuUsageBaseline current, double latencyImprovement, 
-                                           double cpuReduction, double memoryReduction) {
-        StringBuilder summary = new StringBuilder();
-        summary.append("Performance Validation Summary:\n");
-        summary.append(String.format("• Framebuffer CPU: %.1f%% (target: <%.1f%%) - %s\n",
-                current.averageFramebufferCpuPercent, FRAMEBUFFER_CPU_TARGET_PERCENT,
-                current.averageFramebufferCpuPercent < FRAMEBUFFER_CPU_TARGET_PERCENT ? "✓ PASS" : "✗ FAIL"));
-        summary.append(String.format("• Latency improvement: %.1fms (target: >%.1fms) - %s\n",
-                latencyImprovement, LATENCY_IMPROVEMENT_TARGET_MS,
-                latencyImprovement >= LATENCY_IMPROVEMENT_TARGET_MS ? "✓ PASS" : "✗ FAIL"));
-        summary.append(String.format("• CPU reduction: %.1f%% (target: >%.1f%%) - %s\n",
-                cpuReduction, CPU_REDUCTION_TARGET_PERCENT,
-                cpuReduction >= CPU_REDUCTION_TARGET_PERCENT ? "✓ PASS" : "✗ FAIL"));
-        summary.append(String.format("• Memory pressure reduction: %.1f%% - %s\n",
-                memoryReduction, memoryReduction > 0 ? "✓ PASS" : "✗ FAIL"));
+    private long getCurrentCpuTime() {
+        try {
+            // Read CPU time from /proc/self/stat
+            BufferedReader reader = new BufferedReader(new FileReader("/proc/self/stat"));
+            String line = reader.readLine();
+            reader.close();
+            
+            if (line != null) {
+                String[] parts = line.split(" ");
+                if (parts.length > 15) {
+                    // utime (14th field) + stime (15th field) in clock ticks
+                    long utime = Long.parseLong(parts[13]);
+                    long stime = Long.parseLong(parts[14]);
+                    
+                    // Convert clock ticks to microseconds (assuming 100 Hz)
+                    return (utime + stime) * 10000; // 1 tick = 10ms = 10000μs
+                }
+            }
+        } catch (IOException | NumberFormatException e) {
+            Log.w(TAG, "Failed to read CPU time from /proc/self/stat", e);
+        }
         
-        return summary.toString();
+        // Fallback to Debug.threadCpuTimeNanos if available
+        try {
+            return Debug.threadCpuTimeNanos() / 1000; // Convert to microseconds
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to get thread CPU time", e);
+        }
+        
+        return 0;
     }
     
-    private List<String> generateRecommendations(CpuUsageBaseline current, double latencyImprovement, double cpuReduction) {
-        List<String> recommendations = new ArrayList<>();
+    private double calculateTotalCpuPercentage(long durationMs) {
+        if (durationMs <= 0) return 0;
         
-        if (current.averageFramebufferCpuPercent >= FRAMEBUFFER_CPU_TARGET_PERCENT) {
-            recommendations.add("Framebuffer CPU usage is above target. Consider further copy operation elimination.");
-        }
+        long totalCpu = totalCpuTimeUs.get();
+        long totalTime = durationMs * 1000; // Convert to microseconds
         
-        if (latencyImprovement < LATENCY_IMPROVEMENT_TARGET_MS) {
-            recommendations.add("Latency improvement is below target. Review processing pipeline for additional optimizations.");
-        }
-        
-        if (cpuReduction < CPU_REDUCTION_TARGET_PERCENT) {
-            recommendations.add("CPU reduction is below target. Verify zero-copy optimizations are active.");
-        }
-        
-        if (current.averageCopyOperationsPerFrame > 2.5) {
-            recommendations.add("Copy operations per frame is above optimal. Review framebuffer optimization implementation.");
-        }
-        
-        if (recommendations.isEmpty()) {
-            recommendations.add("All performance targets met. Optimization successful!");
-        }
-        
-        return recommendations;
+        return totalTime > 0 ? (totalCpu * 100.0) / totalTime : 0;
     }
     
-    private PerformanceValidationResults createEmptyValidationResults(String reason) {
-        return new PerformanceValidationResults(
-                false, false, false, false,
-                0, 0, 0, 0,
-                null, null,
-                "Validation failed: " + reason,
-                Collections.singletonList("Ensure profiler is active with sufficient measurement data"));
+    private double calculateFramebufferCpuPercentage(long durationMs) {
+        if (durationMs <= 0) return 0;
+        
+        long framebufferCpu = framebufferCpuTimeUs.get();
+        long totalTime = durationMs * 1000; // Convert to microseconds
+        
+        return totalTime > 0 ? (framebufferCpu * 100.0) / totalTime : 0;
     }
     
-    private void logProfilingSummary() {
-        long duration = System.currentTimeMillis() - profilingStartTime;
-        long frames = totalFramesProcessed.get();
-        
-        Log.i(TAG, String.format("Profiling Summary - Duration: %dms, Frames: %d, CPU samples: %d, Memory samples: %d",
-                duration, frames, cpuMeasurements.size(), memoryMeasurements.size()));
-        
-        if (baseline != null) {
-            CpuUsageBaseline current = calculateCurrentBaseline();
-            Log.i(TAG, "Baseline: " + baseline);
-            Log.i(TAG, "Current: " + current);
+    private long getCurrentMemoryUsage() {
+        Runtime runtime = Runtime.getRuntime();
+        return runtime.totalMemory() - runtime.freeMemory();
+    }
+    
+    private void updateMinLatency(long latency) {
+        long current = minLatency.get();
+        while (latency < current) {
+            if (minLatency.compareAndSet(current, latency)) {
+                break;
+            }
+            current = minLatency.get();
         }
+    }
+    
+    private void updateMaxLatency(long latency) {
+        long current = maxLatency.get();
+        while (latency > current) {
+            if (maxLatency.compareAndSet(current, latency)) {
+                break;
+            }
+            current = maxLatency.get();
+        }
+    }
+    
+    private void updatePeakMemory(long memory) {
+        long current = peakMemoryUsage.get();
+        while (memory > current) {
+            if (peakMemoryUsage.compareAndSet(current, memory)) {
+                break;
+            }
+            current = peakMemoryUsage.get();
+        }
+    }
+    
+    private void checkPerformanceAlerts(CpuUsageMetrics metrics) {
+        // Alert if framebuffer CPU usage exceeds target
+        if (metrics.framebufferCpuPercentage > TARGET_FRAMEBUFFER_CPU_PERCENTAGE) {
+            String alert = String.format("Framebuffer CPU usage %.1f%% exceeds target %.1f%%", 
+                    metrics.framebufferCpuPercentage, TARGET_FRAMEBUFFER_CPU_PERCENTAGE);
+            
+            if (callback != null) {
+                callback.onPerformanceAlert(alert, metrics);
+            }
+        }
+        
+        // Alert if frame latency is too high
+        if (metrics.averageFrameLatencyMs > 100) { // 100ms is very high
+            String alert = String.format("Frame latency %.1fms is very high", 
+                    metrics.averageFrameLatencyMs);
+            
+            if (callback != null) {
+                callback.onPerformanceAlert(alert, metrics);
+            }
+        }
+        
+        // Alert if GC frequency is too high
+        if (metrics.gcFrequencyPerSecond > 5.0) { // More than 5 GCs per second
+            String alert = String.format("GC frequency %.1f/s is very high", 
+                    metrics.gcFrequencyPerSecond);
+            
+            if (callback != null) {
+                callback.onPerformanceAlert(alert, metrics);
+            }
+        }
+    }
+    
+    /**
+     * Release profiler resources
+     */
+    public void release() {
+        Log.d(TAG, "Releasing CpuUsageProfiler resources");
+        
+        if (isMonitoring) {
+            stopMonitoring();
+        }
+        
+        callback = null;
+        baselineMetrics.set(null);
+        resetCounters();
+        
+        Log.i(TAG, "CpuUsageProfiler resources released");
     }
 }

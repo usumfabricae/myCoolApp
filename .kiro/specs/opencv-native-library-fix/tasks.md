@@ -231,7 +231,8 @@
   - Measure framebuffer operation CPU percentage (target: <30%)
   - Validate frame processing latency improvement (target: 20-30ms reduction)
   - Measure memory pressure and GC frequency reduction
-  - Document performance improvements
+  - Document per
+  formance improvements
   - _Requirements: Req-13.6_
 
 - [ ] 26. Update unit and integration tests for optimized pipeline

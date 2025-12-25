@@ -20,6 +20,10 @@ import com.example.opencvcamerastream.error.ErrorDialogManager;
 import com.example.opencvcamerastream.error.PerformanceMonitor;
 import com.example.opencvcamerastream.performance.PerformanceMetricsCollector;
 import com.example.opencvcamerastream.performance.PerformanceDisplayManager;
+import com.example.opencvcamerastream.performance.PerformanceMeasurementManager;
+import com.example.opencvcamerastream.performance.CpuUsageProfiler;
+import com.example.opencvcamerastream.processing.CopyOperationTracker;
+import com.example.opencvcamerastream.processing.ZeroCopyProcessor;
 import com.example.opencvcamerastream.compliance.Android10ComplianceValidator;
 import com.example.opencvcamerastream.compliance.Android10TestUtils;
 import org.opencv.android.BaseLoaderCallback;
@@ -69,6 +73,12 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
     private PerformanceMonitor performanceMonitor;
     private PerformanceMetricsCollector performanceMetricsCollector;
     private PerformanceDisplayManager performanceDisplayManager;
+    
+    // Performance measurement system (Task 25)
+    private PerformanceMeasurementManager performanceMeasurementManager;
+    private CopyOperationTracker copyOperationTracker;
+    private ZeroCopyProcessor zeroCopyProcessor;
+    private boolean isPerformanceMeasurementActive = false;
     
     // Android 10 compliance validation
     private Android10ComplianceValidator complianceValidator;
@@ -281,6 +291,9 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         
         // Initialize performance display manager
         performanceDisplayManager = new PerformanceDisplayManager(this);
+        
+        // Initialize performance measurement system (Task 25)
+        initializePerformanceMeasurement();
         
         Log.d(TAG, "Error handling system initialized");
     }
@@ -1384,6 +1397,25 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             Log.d(TAG, "Display manager released with surface cleanup");
         }
         
+        // Release performance measurement system (Task 25)
+        if (performanceMeasurementManager != null) {
+            performanceMeasurementManager.release();
+            performanceMeasurementManager = null;
+            Log.d(TAG, "Performance measurement manager released");
+        }
+        
+        if (copyOperationTracker != null) {
+            copyOperationTracker.resetMetrics();
+            copyOperationTracker = null;
+            Log.d(TAG, "Copy operation tracker released");
+        }
+        
+        if (zeroCopyProcessor != null) {
+            zeroCopyProcessor.release();
+            zeroCopyProcessor = null;
+            Log.d(TAG, "Zero-copy processor released");
+        }
+        
         // Release error handling resources
         if (errorDialogManager != null) {
             errorDialogManager.release();
@@ -1682,6 +1714,142 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
     }
     
     /**
+     * Initialize performance measurement system (Task 25)
+     * Sets up comprehensive CPU usage profiling and optimization validation
+     */
+    private void initializePerformanceMeasurement() {
+        Log.d(TAG, "Initializing performance measurement system for Task 25");
+        
+        try {
+            // Initialize copy operation tracker
+            copyOperationTracker = new CopyOperationTracker();
+            
+            // Initialize zero-copy processor (will be set up when OpenCV is ready)
+            // zeroCopyProcessor will be initialized in OpenCV callback
+            
+            // Initialize performance measurement manager
+            performanceMeasurementManager = new PerformanceMeasurementManager(this);
+            performanceMeasurementManager.setCallback(new PerformanceMeasurementManager.PerformanceMeasurementCallback() {
+                @Override
+                public void onMeasurementPhaseChanged(@NonNull PerformanceMeasurementManager.MeasurementPhase phase) {
+                    Log.i(TAG, "Performance measurement phase changed to: " + phase.getDescription());
+                    runOnUiThread(() -> {
+                        Toast.makeText(MainActivity.this, 
+                                "Performance measurement: " + phase.getDescription(), 
+                                Toast.LENGTH_SHORT).show();
+                    });
+                }
+                
+                @Override
+                public void onMeasurementUpdate(@NonNull String update) {
+                    Log.d(TAG, "Performance measurement update: " + update);
+                    // Update performance display if available
+                    if (performanceDisplayManager != null) {
+                        performanceDisplayManager.showMeasurementUpdate(update);
+                    }
+                }
+                
+                @Override
+                public void onMeasurementCompleted(@NonNull PerformanceMeasurementManager.PerformanceMeasurementResults results) {
+                    Log.i(TAG, "Performance measurement completed: " + results);
+                    
+                    runOnUiThread(() -> {
+                        String message = results.allTargetsMet ? 
+                                "✓ All optimization targets met!" : 
+                                "⚠ Some optimization targets not met";
+                        Toast.makeText(MainActivity.this, message, Toast.LENGTH_LONG).show();
+                    });
+                    
+                    // Show detailed results in performance display
+                    if (performanceDisplayManager != null) {
+                        performanceDisplayManager.showMeasurementResults(results);
+                    }
+                }
+                
+                @Override
+                public void onMeasurementError(@NonNull String error, @androidx.annotation.Nullable Exception exception) {
+                    Log.e(TAG, "Performance measurement error: " + error, exception);
+                    runOnUiThread(() -> {
+                        Toast.makeText(MainActivity.this, 
+                                "Performance measurement error: " + error, 
+                                Toast.LENGTH_LONG).show();
+                    });
+                }
+            });
+            
+            Log.i(TAG, "Performance measurement system initialized successfully");
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to initialize performance measurement system", e);
+            if (errorHandler != null) {
+                errorHandler.handleSystemError(e, "performance measurement initialization");
+            }
+        }
+    }
+    
+    /**
+     * Start baseline performance measurement (before optimization)
+     * Call this method to begin measuring performance before applying optimizations
+     */
+    public void startBaselinePerformanceMeasurement() {
+        if (performanceMeasurementManager != null) {
+            Log.i(TAG, "Starting baseline performance measurement");
+            performanceMeasurementManager.startBaselineMeasurement();
+        } else {
+            Log.w(TAG, "Performance measurement manager not initialized");
+        }
+    }
+    
+    /**
+     * Complete baseline measurement and start optimized measurement
+     * Call this method after applying optimizations to measure improved performance
+     */
+    public void startOptimizedPerformanceMeasurement() {
+        if (performanceMeasurementManager != null) {
+            Log.i(TAG, "Completing baseline and starting optimized performance measurement");
+            performanceMeasurementManager.completeBaselineMeasurement();
+            
+            // Set up components for optimized measurement
+            if (copyOperationTracker != null && zeroCopyProcessor != null && frameProcessor != null) {
+                performanceMeasurementManager.setComponents(copyOperationTracker, zeroCopyProcessor, frameProcessor);
+            }
+            
+            performanceMeasurementManager.startOptimizedMeasurement();
+        } else {
+            Log.w(TAG, "Performance measurement manager not initialized");
+        }
+    }
+    
+    /**
+     * Complete optimized measurement and generate validation report
+     * Call this method to finalize performance measurement and generate the report
+     */
+    public void completePerformanceMeasurement() {
+        if (performanceMeasurementManager != null) {
+            Log.i(TAG, "Completing optimized performance measurement");
+            performanceMeasurementManager.completeOptimizedMeasurement();
+        } else {
+            Log.w(TAG, "Performance measurement manager not initialized");
+        }
+    }
+    
+    /**
+     * Check if performance measurement is currently active
+     */
+    public boolean isPerformanceMeasurementActive() {
+        return performanceMeasurementManager != null && performanceMeasurementManager.isMeasuring();
+    }
+    
+    /**
+     * Get current performance measurement phase
+     */
+    @androidx.annotation.Nullable
+    public PerformanceMeasurementManager.MeasurementPhase getCurrentMeasurementPhase() {
+        return performanceMeasurementManager != null ? 
+                performanceMeasurementManager.getCurrentPhase() : null;
+    }
+
+    /**
      * Initialize OpenCV with proper libc++_shared.so handling
      * This method ensures OpenCV can find the required dynamic C++ standard library
      */
@@ -1844,6 +2012,22 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         if (openCVProcessor != null) {
             openCVProcessor.initialize();
             Log.d(TAG, "✅ OpenCV processor initialized");
+            
+            // Initialize zero-copy processor for performance measurement (Task 25)
+            if (zeroCopyProcessor == null) {
+                zeroCopyProcessor = new ZeroCopyProcessor(openCVProcessor);
+                if (zeroCopyProcessor.initialize()) {
+                    Log.d(TAG, "✅ Zero-copy processor initialized for performance measurement");
+                    
+                    // Set up performance measurement components
+                    if (performanceMeasurementManager != null && copyOperationTracker != null && frameProcessor != null) {
+                        performanceMeasurementManager.setComponents(copyOperationTracker, zeroCopyProcessor, frameProcessor);
+                        Log.d(TAG, "✅ Performance measurement components configured");
+                    }
+                } else {
+                    Log.w(TAG, "⚠️ Zero-copy processor initialization failed");
+                }
+            }
         }
         
         // Start frame processing if camera is ready
