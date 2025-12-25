@@ -14,6 +14,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.nio.ByteBuffer;
+
+import static org.mockito.Mockito.*;
 
 /**
  * ZeroCopyStressTester validates thread safety and performance of the zero-copy processing path
@@ -175,8 +178,8 @@ public class ZeroCopyStressTester {
     private void processTestFrame(int threadId, int frameIndex) {
         copyTracker.startFrame();
         
-        // Create test image (simulate camera frame)
-        MockImage testImage = createTestImage(320, 240, threadId, frameIndex);
+        // Create test image using Mockito (like other test files)
+        Image testImage = createMockImage(320, 240, threadId, frameIndex);
         
         long startTime = System.currentTimeMillis();
         
@@ -235,10 +238,58 @@ public class ZeroCopyStressTester {
     }
     
     /**
-     * Create a test image for stress testing
+     * Create a mock image for stress testing using Mockito
      */
-    private MockImage createTestImage(int width, int height, int threadId, int frameIndex) {
-        return new MockImage(width, height, threadId, frameIndex);
+    private Image createMockImage(int width, int height, int threadId, int frameIndex) {
+        Image mockImage = mock(Image.class);
+        
+        // Set up basic image properties
+        when(mockImage.getWidth()).thenReturn(width);
+        when(mockImage.getHeight()).thenReturn(height);
+        when(mockImage.getFormat()).thenReturn(android.graphics.ImageFormat.YUV_420_888);
+        when(mockImage.getTimestamp()).thenReturn(System.nanoTime());
+        
+        // Create mock planes for YUV_420_888 format
+        Image.Plane mockPlaneY = mock(Image.Plane.class);
+        Image.Plane mockPlaneU = mock(Image.Plane.class);
+        Image.Plane mockPlaneV = mock(Image.Plane.class);
+        
+        // Set up Y plane (full resolution)
+        int ySize = width * height;
+        ByteBuffer yBuffer = ByteBuffer.allocateDirect(ySize);
+        for (int i = 0; i < ySize; i++) {
+            yBuffer.put((byte) ((i + threadId + frameIndex) % 256));
+        }
+        yBuffer.rewind();
+        when(mockPlaneY.getBuffer()).thenReturn(yBuffer);
+        when(mockPlaneY.getPixelStride()).thenReturn(1);
+        when(mockPlaneY.getRowStride()).thenReturn(width);
+        
+        // Set up U and V planes (quarter resolution)
+        int uvSize = ySize / 4;
+        ByteBuffer uBuffer = ByteBuffer.allocateDirect(uvSize);
+        ByteBuffer vBuffer = ByteBuffer.allocateDirect(uvSize);
+        
+        for (int i = 0; i < uvSize; i++) {
+            uBuffer.put((byte) ((i + threadId * 2 + frameIndex) % 256));
+            vBuffer.put((byte) ((i + threadId * 3 + frameIndex) % 256));
+        }
+        uBuffer.rewind();
+        vBuffer.rewind();
+        
+        when(mockPlaneU.getBuffer()).thenReturn(uBuffer);
+        when(mockPlaneU.getPixelStride()).thenReturn(2);
+        when(mockPlaneU.getRowStride()).thenReturn(width);
+        
+        when(mockPlaneV.getBuffer()).thenReturn(vBuffer);
+        when(mockPlaneV.getPixelStride()).thenReturn(2);
+        when(mockPlaneV.getRowStride()).thenReturn(width);
+        
+        // Set up planes array
+        Image.Plane[] planes = {mockPlaneY, mockPlaneU, mockPlaneV};
+        when(mockImage.getPlanes()).thenReturn(planes);
+        
+        return mockImage;
     }
     
     /**
@@ -320,94 +371,6 @@ public class ZeroCopyStressTester {
         @Override
         public String toString() {
             return String.format("StressTestResults{passed=%s, summary='%s'}", passed, summary);
-        }
-    }
-    
-    /**
-     * Mock Image implementation for testing
-     * Uses composition instead of inheritance to avoid constructor visibility issues
-     */
-    private static class MockImage {
-        private final int width;
-        private final int height;
-        private final int threadId;
-        private final int frameIndex;
-        private boolean closed = false;
-        private final MockPlane[] planes;
-        
-        public MockImage(int width, int height, int threadId, int frameIndex) {
-            this.width = width;
-            this.height = height;
-            this.threadId = threadId;
-            this.frameIndex = frameIndex;
-            
-            // Create mock planes for YUV_420_888 format
-            this.planes = new MockPlane[] {
-                new MockPlane(width * height),      // Y plane
-                new MockPlane(width * height / 4),  // U plane
-                new MockPlane(width * height / 4)   // V plane
-            };
-        }
-        
-        public int getFormat() {
-            return android.graphics.ImageFormat.YUV_420_888;
-        }
-        
-        public int getWidth() {
-            return width;
-        }
-        
-        public int getHeight() {
-            return height;
-        }
-        
-        public long getTimestamp() {
-            return System.nanoTime();
-        }
-        
-        public MockPlane[] getPlanes() {
-            return planes;
-        }
-        
-        public void close() {
-            closed = true;
-        }
-        
-        public boolean isClosed() {
-            return closed;
-        }
-        
-        public int getThreadId() {
-            return threadId;
-        }
-        
-        public int getFrameIndex() {
-            return frameIndex;
-        }
-        
-        private static class MockPlane {
-            private final java.nio.ByteBuffer buffer;
-            
-            public MockPlane(int size) {
-                buffer = java.nio.ByteBuffer.allocateDirect(size);
-                // Fill with test pattern
-                for (int i = 0; i < size; i++) {
-                    buffer.put((byte) (i % 256));
-                }
-                buffer.rewind();
-            }
-            
-            public java.nio.ByteBuffer getBuffer() {
-                return buffer;
-            }
-            
-            public int getPixelStride() {
-                return 1;
-            }
-            
-            public int getRowStride() {
-                return buffer.capacity();
-            }
         }
     }
 }
