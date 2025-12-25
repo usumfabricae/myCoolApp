@@ -32,6 +32,29 @@ public class FramebufferOptimizationValidator {
     
     private static final String TAG = "FramebufferOptimizationValidator";
     
+    /**
+     * Performance grade enum for validation results
+     */
+    public enum PerformanceGrade {
+        EXCELLENT("Excellent - All targets exceeded"),
+        GOOD("Good - All targets met"),
+        SATISFACTORY("Satisfactory - Most targets met"),
+        NEEDS_IMPROVEMENT("Needs Improvement - Some targets not met"),
+        POOR("Poor - Most targets not met");
+        
+        private final String description;
+        
+        PerformanceGrade(String description) {
+            this.description = description;
+        }
+        
+        public String getDescription() {
+            return description;
+        }
+    }
+    
+    private static final String TAG = "FramebufferOptimizationValidator";
+    
     // Performance targets (Requirements)
     private static final double FRAMEBUFFER_CPU_TARGET_PERCENT = 30.0; // <30%
     private static final double MIN_LATENCY_IMPROVEMENT_MS = 20.0; // 20-30ms reduction
@@ -240,7 +263,7 @@ public class FramebufferOptimizationValidator {
         resetCounters();
         
         // Start CPU profiling
-        cpuProfiler.startProfiling(true);
+        cpuProfiler.startMonitoring();
         metricsCollector.startMonitoring();
         
         Log.i(TAG, "Baseline measurement started with warmup period");
@@ -264,7 +287,8 @@ public class FramebufferOptimizationValidator {
         
         // Calculate baseline metrics
         baseline = calculateCurrentBaseline();
-        cpuProfiler.setBaseline(cpuProfiler.captureBaseline());
+        CpuUsageProfiler.CpuUsageMetrics baselineMetrics = cpuProfiler.getCurrentMetrics();
+        cpuProfiler.setBaselineMetrics(baselineMetrics);
         
         // Clear measurements for optimization phase
         measurements.clear();
@@ -293,7 +317,7 @@ public class FramebufferOptimizationValidator {
         isValidationActive = false;
         
         // Stop profiling
-        cpuProfiler.stopProfiling();
+        CpuUsageProfiler.CpuUsageMetrics finalMetrics = cpuProfiler.stopMonitoring();
         metricsCollector.stopMonitoring();
         
         // Generate validation results
@@ -335,7 +359,8 @@ public class FramebufferOptimizationValidator {
         totalCopyOperations.addAndGet(copyOperations);
         
         // Record with CPU profiler
-        cpuProfiler.recordFrameProcessing(processingTimeMs, framebufferTimeMs, copyOperations, usedOptimizedPath);
+        long startTime = System.currentTimeMillis() - processingTimeMs;
+        cpuProfiler.recordFrameProcessingEnd(startTime, usedOptimizedPath);
         
         // Maintain window size
         while (measurements.size() > MEASUREMENT_WINDOW_SIZE) {

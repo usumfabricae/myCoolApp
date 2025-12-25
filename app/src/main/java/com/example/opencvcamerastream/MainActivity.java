@@ -1745,7 +1745,7 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
                     Log.d(TAG, "Performance measurement update: " + update);
                     // Update performance display if available
                     if (performanceDisplayManager != null) {
-                        performanceDisplayManager.showMeasurementUpdate(update);
+                        // performanceDisplayManager.showMeasurementUpdate(update); // Method not implemented yet
                     }
                 }
                 
@@ -1762,7 +1762,7 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
                     
                     // Show detailed results in performance display
                     if (performanceDisplayManager != null) {
-                        performanceDisplayManager.showMeasurementResults(results);
+                        // performanceDisplayManager.showMeasurementResults(results); // Method not implemented yet
                     }
                 }
                 

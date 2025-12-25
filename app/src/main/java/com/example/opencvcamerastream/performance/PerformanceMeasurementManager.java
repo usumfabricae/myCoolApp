@@ -133,7 +133,7 @@ public class PerformanceMeasurementManager implements
         this.context = context;
         this.cpuProfiler = new CpuUsageProfiler();
         this.metricsCollector = new PerformanceMetricsCollector(
-                new com.example.opencvcamerastream.error.PerformanceMonitor());
+                new com.example.opencvcamerastream.error.PerformanceMonitor(context));
         
         // Set up callbacks
         cpuProfiler.setCallback(this);
