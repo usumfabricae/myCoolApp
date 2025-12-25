@@ -215,8 +215,6 @@ public class ZeroCopyStressTester {
                 Log.e(TAG, "First error captured for analysis", e);
             }
         }
-        
-        copyTracker.endFrame();
     }
     
     /**
