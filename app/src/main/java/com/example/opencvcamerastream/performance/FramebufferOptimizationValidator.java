@@ -32,29 +32,6 @@ public class FramebufferOptimizationValidator {
     
     private static final String TAG = "FramebufferOptimizationValidator";
     
-    /**
-     * Performance grade enum for validation results
-     */
-    public enum PerformanceGrade {
-        EXCELLENT("Excellent - All targets exceeded"),
-        GOOD("Good - All targets met"),
-        SATISFACTORY("Satisfactory - Most targets met"),
-        NEEDS_IMPROVEMENT("Needs Improvement - Some targets not met"),
-        POOR("Poor - Most targets not met");
-        
-        private final String description;
-        
-        PerformanceGrade(String description) {
-            this.description = description;
-        }
-        
-        public String getDescription() {
-            return description;
-        }
-    }
-    
-    private static final String TAG = "FramebufferOptimizationValidator";
-    
     // Performance targets (Requirements)
     private static final double FRAMEBUFFER_CPU_TARGET_PERCENT = 30.0; // <30%
     private static final double MIN_LATENCY_IMPROVEMENT_MS = 20.0; // 20-30ms reduction
@@ -160,6 +137,27 @@ public class FramebufferOptimizationValidator {
      * Comprehensive validation results
      */
     public static class OptimizationValidationResults {
+        /**
+         * Performance grade enum for validation results
+         */
+        public enum PerformanceGrade {
+            EXCELLENT("Excellent - All targets exceeded"),
+            GOOD("Good - All targets met"),
+            SATISFACTORY("Satisfactory - Most targets met"),
+            NEEDS_IMPROVEMENT("Needs Improvement - Some targets not met"),
+            POOR("Poor - Most targets not met");
+            
+            private final String description;
+            
+            PerformanceGrade(String description) {
+                this.description = description;
+            }
+            
+            public String getDescription() {
+                return description;
+            }
+        }
+        
         public final boolean meetsFramebufferCpuTarget;
         public final boolean meetsLatencyImprovementTarget;
         public final boolean meetsCpuReductionTarget;
@@ -178,24 +176,6 @@ public class FramebufferOptimizationValidator {
         public final String detailedReport;
         public final List<String> recommendations;
         public final PerformanceGrade overallGrade;
-        
-        public enum PerformanceGrade {
-            EXCELLENT("Excellent - All targets exceeded"),
-            GOOD("Good - All targets met"),
-            SATISFACTORY("Satisfactory - Most targets met"),
-            NEEDS_IMPROVEMENT("Needs Improvement - Some targets missed"),
-            POOR("Poor - Most targets missed");
-            
-            private final String description;
-            
-            PerformanceGrade(String description) {
-                this.description = description;
-            }
-            
-            public String getDescription() {
-                return description;
-            }
-        }
         
         public OptimizationValidationResults(boolean fbTarget, boolean latencyTarget, boolean cpuTarget, boolean memTarget,
                                            double fbCpu, double latencyImpr, double cpuReduction, double memImpr, double copyReduction,
@@ -492,7 +472,7 @@ public class FramebufferOptimizationValidator {
         List<String> recommendations = generateRecommendations(current, latencyImprovement, cpuReduction, copyReduction);
         
         // Calculate overall grade
-        PerformanceGrade grade = calculatePerformanceGrade(meetsFramebufferTarget, meetsLatencyTarget, meetsCpuTarget, meetsMemoryTarget,
+        OptimizationValidationResults.PerformanceGrade grade = calculatePerformanceGrade(meetsFramebufferTarget, meetsLatencyTarget, meetsCpuTarget, meetsMemoryTarget,
                 current.averageFramebufferCpuPercent, latencyImprovement, cpuReduction);
         
         return new OptimizationValidationResults(
@@ -575,7 +555,7 @@ public class FramebufferOptimizationValidator {
         return recommendations;
     }
     
-    private PerformanceGrade calculatePerformanceGrade(boolean fbTarget, boolean latencyTarget, boolean cpuTarget, boolean memTarget,
+    private OptimizationValidationResults.PerformanceGrade calculatePerformanceGrade(boolean fbTarget, boolean latencyTarget, boolean cpuTarget, boolean memTarget,
                                                      double fbCpu, double latencyImpr, double cpuReduction) {
         int targetsMet = 0;
         if (fbTarget) targetsMet++;
@@ -585,19 +565,19 @@ public class FramebufferOptimizationValidator {
         
         // Check for exceptional performance
         if (targetsMet == 4 && fbCpu < 20 && latencyImpr > 35 && cpuReduction > 60) {
-            return PerformanceGrade.EXCELLENT;
+            return OptimizationValidationResults.PerformanceGrade.EXCELLENT;
         }
         
         // Grade based on targets met
         switch (targetsMet) {
             case 4:
-                return PerformanceGrade.GOOD;
+                return OptimizationValidationResults.PerformanceGrade.GOOD;
             case 3:
-                return PerformanceGrade.SATISFACTORY;
+                return OptimizationValidationResults.PerformanceGrade.SATISFACTORY;
             case 2:
-                return PerformanceGrade.NEEDS_IMPROVEMENT;
+                return OptimizationValidationResults.PerformanceGrade.NEEDS_IMPROVEMENT;
             default:
-                return PerformanceGrade.POOR;
+                return OptimizationValidationResults.PerformanceGrade.POOR;
         }
     }
     
@@ -608,7 +588,7 @@ public class FramebufferOptimizationValidator {
                 null, null,
                 "Validation failed: " + reason,
                 List.of("Ensure proper baseline and optimization measurements are completed"),
-                PerformanceGrade.POOR);
+                OptimizationValidationResults.PerformanceGrade.POOR);
     }
     
     private double getCurrentCpuUsage() {
