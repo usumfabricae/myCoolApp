@@ -56,6 +56,15 @@ public class CameraManager {
     private static final int MAX_PREVIEW_HEIGHT = 1080;
     private static final int IMAGE_FORMAT = ImageFormat.YUV_420_888;
     
+    // High-performance video configuration for 60 FPS
+    private static final int TARGET_FPS = 60;
+    private static final long TARGET_FRAME_INTERVAL_MS = 1000 / TARGET_FPS; // ~16.67ms for 60 FPS
+    private static final int HIGH_SPEED_VIDEO_WIDTH = 1920;
+    private static final int HIGH_SPEED_VIDEO_HEIGHT = 1080;
+    
+    // Frame rate management
+    private static final long STANDARD_FRAME_INTERVAL_MS = 33; // ~30 FPS fallback
+    
     // Threading and synchronization
     private HandlerThread backgroundThread;
     private Handler backgroundHandler;
@@ -70,6 +79,9 @@ public class CameraManager {
     private CaptureRequest previewRequest;
     private ImageReader imageReader;
     private Size previewSize;
+    
+    // Camera configuration state
+    private CameraConfig currentConfig;
     
     // Context and lifecycle
     private final Context context;
@@ -98,7 +110,6 @@ public class CameraManager {
     private long totalFramesProcessed = 0;
     private long totalFramesDropped = 0;
     private long lastFrameTime = 0;
-    private static final long TARGET_FRAME_INTERVAL_MS = 33; // ~30 FPS
     
     // Callbacks
     private CameraCallback cameraCallback;
@@ -122,18 +133,56 @@ public class CameraManager {
     }
     
     /**
-     * Camera configuration class
+     * Camera configuration class with high-speed video support
      */
     public static class CameraConfig {
-        public Size preferredSize = new Size(1280, 720);
+        public Size preferredSize = new Size(HIGH_SPEED_VIDEO_WIDTH, HIGH_SPEED_VIDEO_HEIGHT); // Default to 1920x1080
         public int imageFormat = IMAGE_FORMAT;
         public boolean enableAutoFocus = true;
         public boolean enableAutoExposure = true;
+        public boolean enableHighSpeedVideo = true; // Enable 60 FPS by default
+        public int targetFps = TARGET_FPS; // Target 60 FPS
+        public boolean enableVideoStabilization = false; // Disabled for better performance
         
         public CameraConfig() {}
         
         public CameraConfig(Size preferredSize) {
             this.preferredSize = preferredSize;
+        }
+        
+        /**
+         * Create configuration optimized for high-speed video (60 FPS at 1920x1080)
+         */
+        public static CameraConfig createHighSpeedVideoConfig() {
+            CameraConfig config = new CameraConfig();
+            config.preferredSize = new Size(HIGH_SPEED_VIDEO_WIDTH, HIGH_SPEED_VIDEO_HEIGHT);
+            config.enableHighSpeedVideo = true;
+            config.targetFps = TARGET_FPS;
+            config.enableVideoStabilization = false; // Disabled for performance
+            config.enableAutoFocus = true; // Use continuous video AF
+            config.enableAutoExposure = true;
+            return config;
+        }
+        
+        /**
+         * Create configuration for standard video (30 FPS)
+         */
+        public static CameraConfig createStandardVideoConfig() {
+            CameraConfig config = new CameraConfig();
+            config.preferredSize = new Size(1280, 720);
+            config.enableHighSpeedVideo = false;
+            config.targetFps = 30;
+            config.enableVideoStabilization = true;
+            config.enableAutoFocus = true;
+            config.enableAutoExposure = true;
+            return config;
+        }
+        
+        @Override
+        public String toString() {
+            return String.format("CameraConfig{size=%dx%d, fps=%d, highSpeed=%s, stabilization=%s}", 
+                    preferredSize.getWidth(), preferredSize.getHeight(), 
+                    targetFps, enableHighSpeedVideo, enableVideoStabilization);
         }
     }
     
@@ -396,13 +445,13 @@ public class CameraManager {
     }
     
     /**
-     * Initialize camera with default configuration
+     * Initialize camera with high-speed video configuration (60 FPS at 1920x1080)
      * Requirement 1.2: Initialize camera when permissions are granted
      * 
      * @return true if initialization successful, false otherwise
      */
     public boolean initializeCamera() {
-        return initializeCamera(new CameraConfig());
+        return initializeCamera(CameraConfig.createHighSpeedVideoConfig());
     }
     
     /**
@@ -413,12 +462,15 @@ public class CameraManager {
      * @return true if initialization successful, false otherwise
      */
     public boolean initializeCamera(@NonNull CameraConfig config) {
-        Log.d(TAG, "Initializing camera with config: " + config.preferredSize);
+        Log.d(TAG, "Initializing camera with config: " + config);
         
         if (isInitialized) {
             Log.w(TAG, "Camera already initialized");
             return true;
         }
+        
+        // Store configuration
+        this.currentConfig = config;
         
         // Check camera permission
         if (ActivityCompat.checkSelfPermission(context, Manifest.permission.CAMERA) 
@@ -450,11 +502,23 @@ public class CameraManager {
                 return false;
             }
             
-            // Choose optimal preview size
-            previewSize = chooseOptimalSize(map.getOutputSizes(config.imageFormat), 
+            // Choose optimal preview size based on configuration
+            Size[] availableSizes;
+            if (config.enableHighSpeedVideo) {
+                // Use high-speed video sizes if available
+                Size[] highSpeedSizes = map.getHighSpeedVideoSizes();
+                availableSizes = highSpeedSizes.length > 0 ? highSpeedSizes : map.getOutputSizes(config.imageFormat);
+                Log.i(TAG, "Using high-speed video sizes, available count: " + highSpeedSizes.length);
+            } else {
+                availableSizes = map.getOutputSizes(config.imageFormat);
+                Log.i(TAG, "Using standard output sizes, available count: " + availableSizes.length);
+            }
+            
+            previewSize = chooseOptimalSize(availableSizes, 
                     config.preferredSize.getWidth(), config.preferredSize.getHeight());
             
-            Log.d(TAG, "Selected preview size: " + previewSize);
+            Log.i(TAG, "Selected preview size: " + previewSize + " for " + 
+                  (config.enableHighSpeedVideo ? "high-speed" : "standard") + " video");
             
             // Set up ImageReader for frame capture
             setupImageReader(config);
@@ -463,7 +527,7 @@ public class CameraManager {
             startBackgroundThread();
             
             isInitialized = true;
-            Log.i(TAG, "Camera initialized successfully");
+            Log.i(TAG, "Camera initialized successfully with " + config);
             return true;
             
         } catch (CameraAccessException e) {
@@ -627,6 +691,31 @@ public class CameraManager {
     @Nullable
     public Size getPreviewSize() {
         return previewSize;
+    }
+    
+    /**
+     * Get current camera configuration
+     * @return Camera configuration or null if not initialized
+     */
+    @Nullable
+    public CameraConfig getCurrentConfig() {
+        return currentConfig;
+    }
+    
+    /**
+     * Check if high-speed video mode is active
+     * @return true if high-speed video mode is active
+     */
+    public boolean isHighSpeedVideoActive() {
+        return currentConfig != null && currentConfig.enableHighSpeedVideo && isPreviewActive;
+    }
+    
+    /**
+     * Get current target FPS
+     * @return Target FPS or 30 if not configured
+     */
+    public int getCurrentTargetFps() {
+        return currentConfig != null ? currentConfig.targetFps : 30;
     }
     
     /**
@@ -814,63 +903,39 @@ public class CameraManager {
     }
     
     /**
-     * Create camera capture session
+     * Create camera capture session with high-speed video support for 60 FPS
      */
     private void createCameraPreviewSession() {
         try {
-            Log.d(TAG, "Creating camera preview session");
+            Log.d(TAG, "Creating camera preview session with config: " + currentConfig);
             
-            // Create capture request builder
-            previewRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
-            previewRequestBuilder.addTarget(imageReader.getSurface());
-            
-            // Set auto-focus and auto-exposure
-            previewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,
-                    CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
-            previewRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE,
-                    CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
-            
-            // Create capture session
-            cameraDevice.createCaptureSession(Arrays.asList(imageReader.getSurface()),
-                    new CameraCaptureSession.StateCallback() {
-                        @Override
-                        public void onConfigured(@NonNull CameraCaptureSession cameraCaptureSession) {
-                            Log.d(TAG, "Camera capture session configured");
-                            
-                            if (cameraDevice == null) {
-                                Log.w(TAG, "Camera device is null in session callback");
-                                return;
-                            }
-                            
-                            captureSession = cameraCaptureSession;
-                            
-                            try {
-                                // Start repeating capture requests
-                                previewRequest = previewRequestBuilder.build();
-                                captureSession.setRepeatingRequest(previewRequest, null, backgroundHandler);
-                                
-                                isPreviewActive = true;
-                                Log.i(TAG, "Camera preview started successfully");
-                                
-                                if (cameraCallback != null) {
-                                    cameraCallback.onCameraOpened();
-                                }
-                                
-                            } catch (CameraAccessException e) {
-                                Log.e(TAG, "Failed to start camera preview", e);
-                                if (errorHandler != null) {
-                                    errorHandler.handleCameraHardwareError(e.getReason(), e.getMessage(), e);
-                                }
-                                notifyCameraError(e.getReason(), e.getMessage());
-                            }
+            // Check if high-speed video is requested and supported
+            if (currentConfig != null && currentConfig.enableHighSpeedVideo) {
+                CameraCharacteristics characteristics = systemCameraManager.getCameraCharacteristics(cameraId);
+                StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+                
+                boolean supportsHighSpeed = false;
+                if (map != null) {
+                    Size[] highSpeedSizes = map.getHighSpeedVideoSizes();
+                    for (Size size : highSpeedSizes) {
+                        if (size.getWidth() == previewSize.getWidth() && size.getHeight() == previewSize.getHeight()) {
+                            supportsHighSpeed = true;
+                            Log.i(TAG, "High-speed video supported at " + previewSize);
+                            break;
                         }
-                        
-                        @Override
-                        public void onConfigureFailed(@NonNull CameraCaptureSession cameraCaptureSession) {
-                            Log.e(TAG, "Camera capture session configuration failed");
-                            notifyCameraError(-1, "Camera session configuration failed");
-                        }
-                    }, backgroundHandler);
+                    }
+                }
+                
+                if (supportsHighSpeed) {
+                    createHighSpeedVideoSession(characteristics);
+                } else {
+                    Log.w(TAG, "High-speed video not supported at " + previewSize + ", falling back to standard preview");
+                    createStandardPreviewSession();
+                }
+            } else {
+                Log.i(TAG, "Standard preview mode requested");
+                createStandardPreviewSession();
+            }
                     
         } catch (CameraAccessException e) {
             Log.e(TAG, "Failed to create camera preview session", e);
@@ -879,6 +944,197 @@ public class CameraManager {
             }
             notifyCameraError(e.getReason(), e.getMessage());
         }
+    }
+    
+    /**
+     * Create high-speed video capture session for 60 FPS
+     */
+    private void createHighSpeedVideoSession(CameraCharacteristics characteristics) throws CameraAccessException {
+        Log.d(TAG, "Creating high-speed video session for " + currentConfig.targetFps + " FPS at " + previewSize);
+        
+        // Create capture request builder for high-speed video
+        previewRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_RECORD);
+        previewRequestBuilder.addTarget(imageReader.getSurface());
+        
+        // Configure for high-speed video
+        previewRequestBuilder.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_USE_SCENE_MODE);
+        previewRequestBuilder.set(CaptureRequest.CONTROL_SCENE_MODE, CaptureRequest.CONTROL_SCENE_MODE_HIGH_SPEED_VIDEO);
+        
+        // Set target FPS range for the configured FPS
+        android.util.Range<Integer>[] fpsRanges = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES);
+        android.util.Range<Integer> targetFpsRange = null;
+        
+        if (fpsRanges != null) {
+            // Look for exact FPS range or closest match
+            for (android.util.Range<Integer> range : fpsRanges) {
+                if (range.getUpper() >= currentConfig.targetFps) {
+                    targetFpsRange = range;
+                    Log.i(TAG, "Selected FPS range: " + range.getLower() + "-" + range.getUpper() + 
+                          " for target " + currentConfig.targetFps + " FPS");
+                    break;
+                }
+            }
+            
+            // Fall back to highest available FPS
+            if (targetFpsRange == null && fpsRanges.length > 0) {
+                targetFpsRange = fpsRanges[fpsRanges.length - 1];
+                Log.w(TAG, currentConfig.targetFps + " FPS not available, using highest FPS range: " + 
+                      targetFpsRange.getLower() + "-" + targetFpsRange.getUpper());
+            }
+        }
+        
+        if (targetFpsRange != null) {
+            previewRequestBuilder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, targetFpsRange);
+        }
+        
+        // Configure focus mode based on configuration
+        if (currentConfig.enableAutoFocus) {
+            previewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
+        } else {
+            previewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF);
+        }
+        
+        // Configure exposure mode
+        if (currentConfig.enableAutoExposure) {
+            previewRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON);
+        } else {
+            previewRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF);
+        }
+        
+        // Configure video stabilization based on configuration
+        if (currentConfig.enableVideoStabilization) {
+            previewRequestBuilder.set(CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE, 
+                    CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE_ON);
+        } else {
+            // Disable stabilization for better performance
+            previewRequestBuilder.set(CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE, 
+                    CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE_OFF);
+            previewRequestBuilder.set(CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE, 
+                    CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE_OFF);
+        }
+        
+        // Create high-speed capture session
+        cameraDevice.createCaptureSession(Arrays.asList(imageReader.getSurface()),
+                new CameraCaptureSession.StateCallback() {
+                    @Override
+                    public void onConfigured(@NonNull CameraCaptureSession cameraCaptureSession) {
+                        Log.d(TAG, "High-speed camera capture session configured");
+                        
+                        if (cameraDevice == null) {
+                            Log.w(TAG, "Camera device is null in session callback");
+                            return;
+                        }
+                        
+                        captureSession = cameraCaptureSession;
+                        
+                        try {
+                            // Start repeating capture requests for high-speed video
+                            previewRequest = previewRequestBuilder.build();
+                            captureSession.setRepeatingRequest(previewRequest, null, backgroundHandler);
+                            
+                            isPreviewActive = true;
+                            Log.i(TAG, "High-speed camera preview started successfully at " + 
+                                  currentConfig.targetFps + " FPS (" + previewSize + ")");
+                            
+                            if (cameraCallback != null) {
+                                cameraCallback.onCameraOpened();
+                            }
+                            
+                        } catch (CameraAccessException e) {
+                            Log.e(TAG, "Failed to start high-speed camera preview", e);
+                            if (errorHandler != null) {
+                                errorHandler.handleCameraHardwareError(e.getReason(), e.getMessage(), e);
+                            }
+                            notifyCameraError(e.getReason(), e.getMessage());
+                        }
+                    }
+                    
+                    @Override
+                    public void onConfigureFailed(@NonNull CameraCaptureSession cameraCaptureSession) {
+                        Log.e(TAG, "High-speed camera capture session configuration failed");
+                        // Fall back to standard preview
+                        try {
+                            createStandardPreviewSession();
+                        } catch (CameraAccessException e) {
+                            Log.e(TAG, "Failed to create fallback standard session", e);
+                            notifyCameraError(-1, "Camera session configuration failed");
+                        }
+                    }
+                }, backgroundHandler);
+    }
+    
+    /**
+     * Create standard preview session (fallback)
+     */
+    private void createStandardPreviewSession() throws CameraAccessException {
+        Log.d(TAG, "Creating standard camera preview session");
+        
+        // Create capture request builder
+        previewRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+        previewRequestBuilder.addTarget(imageReader.getSurface());
+        
+        // Set auto-focus and auto-exposure
+        previewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,
+                CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+        previewRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE,
+                CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
+        
+        // Try to set highest available FPS
+        try {
+            CameraCharacteristics characteristics = systemCameraManager.getCameraCharacteristics(cameraId);
+            android.util.Range<Integer>[] fpsRanges = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES);
+            
+            if (fpsRanges != null && fpsRanges.length > 0) {
+                // Use the highest available FPS range
+                android.util.Range<Integer> highestFpsRange = fpsRanges[fpsRanges.length - 1];
+                previewRequestBuilder.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, highestFpsRange);
+                Log.i(TAG, "Set FPS range to: " + highestFpsRange.getLower() + "-" + highestFpsRange.getUpper());
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to set FPS range", e);
+        }
+        
+        // Create capture session
+        cameraDevice.createCaptureSession(Arrays.asList(imageReader.getSurface()),
+                new CameraCaptureSession.StateCallback() {
+                    @Override
+                    public void onConfigured(@NonNull CameraCaptureSession cameraCaptureSession) {
+                        Log.d(TAG, "Standard camera capture session configured");
+                        
+                        if (cameraDevice == null) {
+                            Log.w(TAG, "Camera device is null in session callback");
+                            return;
+                        }
+                        
+                        captureSession = cameraCaptureSession;
+                        
+                        try {
+                            // Start repeating capture requests
+                            previewRequest = previewRequestBuilder.build();
+                            captureSession.setRepeatingRequest(previewRequest, null, backgroundHandler);
+                            
+                            isPreviewActive = true;
+                            Log.i(TAG, "Standard camera preview started successfully");
+                            
+                            if (cameraCallback != null) {
+                                cameraCallback.onCameraOpened();
+                            }
+                            
+                        } catch (CameraAccessException e) {
+                            Log.e(TAG, "Failed to start standard camera preview", e);
+                            if (errorHandler != null) {
+                                errorHandler.handleCameraHardwareError(e.getReason(), e.getMessage(), e);
+                            }
+                            notifyCameraError(e.getReason(), e.getMessage());
+                        }
+                    }
+                    
+                    @Override
+                    public void onConfigureFailed(@NonNull CameraCaptureSession cameraCaptureSession) {
+                        Log.e(TAG, "Standard camera capture session configuration failed");
+                        notifyCameraError(-1, "Camera session configuration failed");
+                    }
+                }, backgroundHandler);
     }
     
     /**
@@ -1199,8 +1455,12 @@ public class CameraManager {
      * Requirements: NFR-001, NFR-002
      */
     private boolean shouldSkipFrame(long currentTime) {
+        // Calculate frame interval based on current configuration
+        long frameInterval = currentConfig != null ? 
+                (1000 / currentConfig.targetFps) : STANDARD_FRAME_INTERVAL_MS;
+        
         // Skip if too soon since last frame (frame rate limiting)
-        if (lastFrameTime > 0 && (currentTime - lastFrameTime) < TARGET_FRAME_INTERVAL_MS) {
+        if (lastFrameTime > 0 && (currentTime - lastFrameTime) < frameInterval) {
             return true;
         }
         
