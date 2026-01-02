@@ -502,6 +502,9 @@ public class CameraManager {
                 return false;
             }
             
+            // Log comprehensive camera capabilities for debugging
+            logCameraCapabilities(cameraId, characteristics, map);
+            
             // Choose optimal preview size based on configuration
             Size[] availableSizes;
             if (config.enableHighSpeedVideo) {
@@ -811,20 +814,38 @@ public class CameraManager {
     private String selectCamera() throws CameraAccessException {
         String[] cameraIds = systemCameraManager.getCameraIdList();
         
+        Log.i(TAG, "=== SCANNING ALL AVAILABLE CAMERAS ===");
+        Log.i(TAG, "Found " + cameraIds.length + " camera(s)");
+        
+        // Log capabilities for all cameras first
+        for (String id : cameraIds) {
+            try {
+                CameraCharacteristics characteristics = systemCameraManager.getCameraCharacteristics(id);
+                StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+                if (map != null) {
+                    logCameraCapabilities(id, characteristics, map);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error logging capabilities for camera " + id, e);
+            }
+        }
+        
+        Log.i(TAG, "=== SELECTING CAMERA ===");
+        
         // Prefer back-facing camera
         for (String id : cameraIds) {
             CameraCharacteristics characteristics = systemCameraManager.getCameraCharacteristics(id);
             Integer facing = characteristics.get(CameraCharacteristics.LENS_FACING);
             
             if (facing != null && facing == CameraCharacteristics.LENS_FACING_BACK) {
-                Log.d(TAG, "Selected back-facing camera: " + id);
+                Log.i(TAG, "Selected back-facing camera: " + id);
                 return id;
             }
         }
         
         // Fall back to first available camera
         if (cameraIds.length > 0) {
-            Log.d(TAG, "Selected first available camera: " + cameraIds[0]);
+            Log.i(TAG, "Selected first available camera: " + cameraIds[0]);
             return cameraIds[0];
         }
         
@@ -1705,3 +1726,153 @@ public class CameraManager {
         }
     }
 }
+    
+    /**
+     * Log comprehensive camera capabilities for debugging
+     */
+    private void logCameraCapabilities(String cameraId, CameraCharacteristics characteristics, StreamConfigurationMap map) {
+        Log.i(TAG, "=== CAMERA CAPABILITIES REPORT FOR CAMERA " + cameraId + " ===");
+        
+        try {
+            // Camera basic info
+            Integer facing = characteristics.get(CameraCharacteristics.LENS_FACING);
+            String facingStr = "UNKNOWN";
+            if (facing != null) {
+                switch (facing) {
+                    case CameraCharacteristics.LENS_FACING_BACK:
+                        facingStr = "BACK";
+                        break;
+                    case CameraCharacteristics.LENS_FACING_FRONT:
+                        facingStr = "FRONT";
+                        break;
+                    case CameraCharacteristics.LENS_FACING_EXTERNAL:
+                        facingStr = "EXTERNAL";
+                        break;
+                }
+            }
+            Log.i(TAG, "Camera facing: " + facingStr);
+            
+            // Available FPS ranges
+            android.util.Range<Integer>[] fpsRanges = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES);
+            if (fpsRanges != null && fpsRanges.length > 0) {
+                Log.i(TAG, "Available FPS ranges (" + fpsRanges.length + " total):");
+                for (android.util.Range<Integer> range : fpsRanges) {
+                    Log.i(TAG, "  FPS Range: " + range.getLower() + "-" + range.getUpper());
+                }
+            } else {
+                Log.w(TAG, "No FPS ranges available");
+            }
+            
+            // High-speed video sizes
+            Size[] highSpeedSizes = map.getHighSpeedVideoSizes();
+            if (highSpeedSizes != null && highSpeedSizes.length > 0) {
+                Log.i(TAG, "High-speed video sizes (" + highSpeedSizes.length + " total):");
+                for (Size size : highSpeedSizes) {
+                    Log.i(TAG, "  High-speed size: " + size.getWidth() + "x" + size.getHeight());
+                    
+                    // Get FPS ranges for this high-speed size
+                    android.util.Range<Integer>[] highSpeedFpsRanges = map.getHighSpeedVideoFpsRangesFor(size);
+                    if (highSpeedFpsRanges != null && highSpeedFpsRanges.length > 0) {
+                        for (android.util.Range<Integer> fpsRange : highSpeedFpsRanges) {
+                            Log.i(TAG, "    -> Supports FPS: " + fpsRange.getLower() + "-" + fpsRange.getUpper());
+                        }
+                    }
+                }
+            } else {
+                Log.w(TAG, "No high-speed video sizes available");
+            }
+            
+            // Regular output sizes for YUV_420_888
+            Size[] outputSizes = map.getOutputSizes(ImageFormat.YUV_420_888);
+            if (outputSizes != null && outputSizes.length > 0) {
+                Log.i(TAG, "Regular YUV_420_888 output sizes (" + outputSizes.length + " total):");
+                // Log first 10 sizes to avoid spam
+                int maxToLog = Math.min(10, outputSizes.length);
+                for (int i = 0; i < maxToLog; i++) {
+                    Size size = outputSizes[i];
+                    Log.i(TAG, "  Output size: " + size.getWidth() + "x" + size.getHeight());
+                }
+                if (outputSizes.length > 10) {
+                    Log.i(TAG, "  ... and " + (outputSizes.length - 10) + " more sizes");
+                }
+            } else {
+                Log.w(TAG, "No YUV_420_888 output sizes available");
+            }
+            
+            // Check specific sizes we're interested in
+            Log.i(TAG, "Checking specific resolutions:");
+            checkResolutionSupport(map, 1920, 1080, "1080p");
+            checkResolutionSupport(map, 1280, 720, "720p");
+            checkResolutionSupport(map, 640, 480, "480p");
+            
+            // Hardware level
+            Integer hardwareLevel = characteristics.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL);
+            String levelStr = "UNKNOWN";
+            if (hardwareLevel != null) {
+                switch (hardwareLevel) {
+                    case CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY:
+                        levelStr = "LEGACY";
+                        break;
+                    case CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LIMITED:
+                        levelStr = "LIMITED";
+                        break;
+                    case CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_FULL:
+                        levelStr = "FULL";
+                        break;
+                    case CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_3:
+                        levelStr = "LEVEL_3";
+                        break;
+                }
+            }
+            Log.i(TAG, "Hardware support level: " + levelStr);
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error logging camera capabilities", e);
+        }
+        
+        Log.i(TAG, "=== END CAMERA CAPABILITIES REPORT ===");
+    }
+    
+    /**
+     * Check if a specific resolution is supported and log details
+     */
+    private void checkResolutionSupport(StreamConfigurationMap map, int width, int height, String name) {
+        Size targetSize = new Size(width, height);
+        
+        // Check regular output sizes
+        Size[] outputSizes = map.getOutputSizes(ImageFormat.YUV_420_888);
+        boolean supportsRegular = false;
+        if (outputSizes != null) {
+            for (Size size : outputSizes) {
+                if (size.getWidth() == width && size.getHeight() == height) {
+                    supportsRegular = true;
+                    break;
+                }
+            }
+        }
+        
+        // Check high-speed video sizes
+        Size[] highSpeedSizes = map.getHighSpeedVideoSizes();
+        boolean supportsHighSpeed = false;
+        android.util.Range<Integer>[] highSpeedFpsRanges = null;
+        if (highSpeedSizes != null) {
+            for (Size size : highSpeedSizes) {
+                if (size.getWidth() == width && size.getHeight() == height) {
+                    supportsHighSpeed = true;
+                    highSpeedFpsRanges = map.getHighSpeedVideoFpsRangesFor(size);
+                    break;
+                }
+            }
+        }
+        
+        Log.i(TAG, name + " (" + width + "x" + height + ") support:");
+        Log.i(TAG, "  Regular output: " + (supportsRegular ? "YES" : "NO"));
+        Log.i(TAG, "  High-speed video: " + (supportsHighSpeed ? "YES" : "NO"));
+        
+        if (supportsHighSpeed && highSpeedFpsRanges != null && highSpeedFpsRanges.length > 0) {
+            Log.i(TAG, "  High-speed FPS ranges for " + name + ":");
+            for (android.util.Range<Integer> fpsRange : highSpeedFpsRanges) {
+                Log.i(TAG, "    " + fpsRange.getLower() + "-" + fpsRange.getUpper() + " FPS");
+            }
+        }
+    }
