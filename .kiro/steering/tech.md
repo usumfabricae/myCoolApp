@@ -5,7 +5,12 @@
 - **Android Gradle Plugin**: 8.1.2
 - **Java**: Version 17 (required for AGP 8.1.2)
 - **Android Studio**: Arctic Fox or later
-- Build System is only available as part of automated CI/CD
+
+## ⚠️ CRITICAL BUILD RESTRICTIONS ⚠️
+- **NO LOCAL BUILDS ALLOWED**: All builds MUST use CI/CD pipeline (Codemagic)
+- **NO LOCAL GRADLEW EXECUTION**: Running `./gradlew` locally is STRICTLY PROHIBITED
+- **CI/CD ONLY**: Build system is exclusively available through automated CI/CD
+- **VIOLATION CONSEQUENCES**: Local build attempts will fail and may corrupt the project
 
 ## Android Configuration
 - **Compile SDK**: 34
@@ -58,9 +63,31 @@
 
 ## CI/CD Platform
 - **Exclusive Platform**: Codemagic (all builds must use CI/CD)
-- **Local Builds**: NOT PERMITTED per project requirements
+- **Local Builds**: ABSOLUTELY FORBIDDEN - NO EXCEPTIONS
 - **Configuration**: `codemagic.yaml` with library acquisition integration
 - **Pre-build Scripts**: Automated OpenCV library download and validation
+
+## ⚠️ GRADLEW EXECUTION POLICY ⚠️
+**NEVER RUN GRADLEW LOCALLY - THIS IS STRICTLY PROHIBITED**
+
+### FORBIDDEN Commands (DO NOT RUN):
+```bash
+# ❌ NEVER RUN THESE COMMANDS LOCALLY ❌
+./gradlew assembleDebug          # FORBIDDEN
+./gradlew testDebugUnitTest      # FORBIDDEN  
+./gradlew lintDebug              # FORBIDDEN
+./gradlew connectedAndroidTest   # FORBIDDEN
+./gradlew build                  # FORBIDDEN
+./gradlew clean                  # FORBIDDEN
+./gradlew --help                 # FORBIDDEN
+./gradlew tasks                  # FORBIDDEN
+```
+
+### Why Local Gradlew is Prohibited:
+1. **Project Requirements**: This project is designed for CI/CD-only builds
+2. **Library Dependencies**: Native libraries are acquired through CI/CD pipeline
+3. **Environment Consistency**: Ensures consistent build environment
+4. **Resource Management**: Prevents local resource conflicts
 
 ## Enhanced Development Workflow
 
@@ -97,14 +124,17 @@ git push origin v1.0.0
 ```
 
 ### Reference Commands (CI/CD Only)
-You can't run gradlew locally. It can only be run as part of CI/CD
+**⚠️ WARNING: THESE COMMANDS ARE FOR REFERENCE ONLY - DO NOT EXECUTE LOCALLY ⚠️**
+
 ```bash
-# These run in CI/CD pipeline only - DO NOT run locally
+# ❌ These run in CI/CD pipeline ONLY - NEVER run locally ❌
 ./gradlew assembleDebug
 ./gradlew testDebugUnitTest
 ./gradlew lintDebug
 ./gradlew connectedAndroidTest
 ```
+
+**REMINDER: Running any gradlew command locally is STRICTLY PROHIBITED**
 
 ### ADB Commands (Local Development)
 ```bash

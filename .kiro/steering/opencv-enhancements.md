@@ -1,5 +1,12 @@
 # OpenCV Camera Stream Enhancements
 
+## ⚠️ BUILD SYSTEM RESTRICTIONS ⚠️
+**CRITICAL: NO LOCAL GRADLEW EXECUTION ALLOWED**
+- All builds MUST use CI/CD pipeline (Codemagic)
+- Running `./gradlew` locally is STRICTLY PROHIBITED
+- Use only ADB commands and validation scripts for local development
+- Any gradlew command execution will violate project requirements
+
 ## Native Library Management
 
 ### Automated Library Acquisition
@@ -219,6 +226,9 @@ public void testMemoryLeakPrevention() {
 
 ## Build System Integration
 
+### ⚠️ GRADLE CONFIGURATION REFERENCE ONLY ⚠️
+**WARNING: This configuration is for CI/CD pipeline reference only - DO NOT attempt to run locally**
+
 ### Gradle Configuration
 ```gradle
 android {
@@ -239,10 +249,17 @@ android {
 }
 ```
 
-### CI/CD Pipeline Integration
+### CI/CD Pipeline Integration (REQUIRED APPROACH)
 - **Pre-build Scripts**: Execute library acquisition before compilation
 - **Validation Steps**: Verify library presence and architecture completeness
 - **Caching Strategy**: Cache downloaded libraries to avoid repeated downloads
 - **Build Artifacts**: Include native libraries in APK validation
+- **NO LOCAL EXECUTION**: All build processes run exclusively in CI/CD environment
+
+### Local Development Restrictions
+- **FORBIDDEN**: Running any gradle/gradlew commands locally
+- **ALLOWED**: ADB commands for device testing and log collection
+- **ALLOWED**: Validation scripts for environment checking
+- **REQUIRED**: Push to repository to trigger CI/CD builds
 
 This enhanced steering document provides comprehensive guidance for implementing the advanced OpenCV camera streaming features with performance optimizations and visual odometry capabilities.

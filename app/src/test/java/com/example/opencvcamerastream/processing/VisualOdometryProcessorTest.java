@@ -10,7 +10,7 @@ import org.opencv.core.Mat;
 import org.opencv.core.CvType;
 import org.opencv.core.KeyPoint;
 import org.opencv.core.DMatch;
-import org.opencv.core.Point2f;
+import org.opencv.core.Point;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -146,8 +146,8 @@ public class VisualOdometryProcessorTest {
     @Test
     public void testEssentialMatrixEstimation() {
         // Test essential matrix estimation with minimal points
-        List<Point2f> points1 = createTestPoints();
-        List<Point2f> points2 = createTestPoints();
+        List<Point> points1 = createTestPoints();
+        List<Point> points2 = createTestPoints();
         
         Mat essentialMatrix = processor.estimateEssentialMatrix(points1, points2);
         
@@ -207,15 +207,15 @@ public class VisualOdometryProcessorTest {
         return matches;
     }
 
-    private List<Point2f> createTestPoints() {
-        List<Point2f> points = new ArrayList<>();
+    private List<Point> createTestPoints() {
+        List<Point> points = new ArrayList<>();
         
         // Create minimal set of test points for essential matrix estimation
-        points.add(new Point2f(100, 100));
-        points.add(new Point2f(200, 150));
-        points.add(new Point2f(300, 200));
-        points.add(new Point2f(400, 250));
-        points.add(new Point2f(500, 300));
+        points.add(new Point(100, 100));
+        points.add(new Point(200, 150));
+        points.add(new Point(300, 200));
+        points.add(new Point(400, 250));
+        points.add(new Point(500, 300));
         
         return points;
     }

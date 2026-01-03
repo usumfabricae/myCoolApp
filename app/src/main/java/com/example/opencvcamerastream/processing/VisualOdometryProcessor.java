@@ -11,7 +11,6 @@ import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.KeyPoint;
 import org.opencv.core.DMatch;
 import org.opencv.core.Point;
-import org.opencv.core.Point2f;
 import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.features2d.ORB;
@@ -149,11 +148,11 @@ public class VisualOdometryProcessor {
     public static class TransformResult {
         public final Mat rotation;      // 3x3 rotation matrix
         public final Mat translation;   // 3x1 translation vector
-        public final List<Point2f> inlierPoints1, inlierPoints2;
+        public final List<Point> inlierPoints1, inlierPoints2;
         public final double reprojectionError;
         
         public TransformResult(Mat rotation, Mat translation,
-                             List<Point2f> inlierPoints1, List<Point2f> inlierPoints2,
+                             List<Point> inlierPoints1, List<Point> inlierPoints2,
                              double reprojectionError) {
             this.rotation = rotation;
             this.translation = translation;
@@ -403,14 +402,14 @@ public class VisualOdometryProcessor {
             }
             
             // Extract matched points
-            List<Point2f> points1 = new ArrayList<>();
-            List<Point2f> points2 = new ArrayList<>();
+            List<Point> points1 = new ArrayList<>();
+            List<Point> points2 = new ArrayList<>();
             
             for (DMatch match : goodMatches) {
                 Point kp1 = keypoints1.get(match.queryIdx).pt;
                 Point kp2 = keypoints2.get(match.trainIdx).pt;
-                points1.add(new Point2f((float)kp1.x, (float)kp1.y));
-                points2.add(new Point2f((float)kp2.x, (float)kp2.y));
+                points1.add(new Point(kp1.x, kp1.y));
+                points2.add(new Point(kp2.x, kp2.y));
             }
             
             // Estimate essential matrix using OpenCV built-in function
@@ -466,7 +465,7 @@ public class VisualOdometryProcessor {
      * @param points2 Corresponding points from second frame
      * @return Essential matrix (3x3)
      */
-    public Mat estimateEssentialMatrix(@NonNull List<Point2f> points1, @NonNull List<Point2f> points2) {
+    public Mat estimateEssentialMatrix(@NonNull List<Point> points1, @NonNull List<Point> points2) {
         if (points1.size() != points2.size() || points1.size() < 5) {
             Log.w(TAG, "Insufficient points for essential matrix estimation: " + points1.size());
             return new Mat();
@@ -476,45 +475,36 @@ public class VisualOdometryProcessor {
             // Convert points to MatOfPoint2f for OpenCV functions
             MatOfPoint2f matPoints1 = new MatOfPoint2f();
             MatOfPoint2f matPoints2 = new MatOfPoint2f();
-            matPoints1.fromList(points1);
-            matPoints2.fromList(points2);
+            
+            // Convert Point list to Point array for MatOfPoint2f
+            Point[] pointArray1 = points1.toArray(new Point[0]);
+            Point[] pointArray2 = points2.toArray(new Point[0]);
+            matPoints1.fromArray(pointArray1);
+            matPoints2.fromArray(pointArray2);
             
             Mat essentialMatrix;
             
             if (hasIntrinsics && cameraMatrix != null) {
                 // Use camera intrinsics for accurate estimation
-                Mat mask = new Mat();
                 essentialMatrix = Calib3d.findEssentialMat(matPoints1, matPoints2, 
                                                          cameraMatrix, 
                                                          Calib3d.RANSAC, 
                                                          RANSAC_CONFIDENCE, 
-                                                         RANSAC_THRESHOLD, 
-                                                         mask);
-                mask.release();
+                                                         RANSAC_THRESHOLD);
                 
                 Log.d(TAG, "Essential matrix estimated with camera intrinsics");
             } else {
                 // Use estimated focal length (assume principal point at image center)
                 // This is a fallback when camera intrinsics are not available
                 double focalLength = 800.0; // Estimated focal length for typical mobile camera
-                Point2f principalPoint = new Point2f(320, 240); // Estimated principal point
+                Point principalPoint = new Point(320, 240); // Estimated principal point
                 
-                Mat estimatedCameraMatrix = Mat.eye(3, 3, org.opencv.core.CvType.CV_64F);
-                estimatedCameraMatrix.put(0, 0, focalLength);
-                estimatedCameraMatrix.put(1, 1, focalLength);
-                estimatedCameraMatrix.put(0, 2, principalPoint.x);
-                estimatedCameraMatrix.put(1, 2, principalPoint.y);
-                
-                Mat mask = new Mat();
                 essentialMatrix = Calib3d.findEssentialMat(matPoints1, matPoints2,
-                                                         estimatedCameraMatrix,
+                                                         focalLength,
+                                                         principalPoint,
                                                          Calib3d.RANSAC,
                                                          RANSAC_CONFIDENCE,
-                                                         RANSAC_THRESHOLD,
-                                                         mask);
-                
-                estimatedCameraMatrix.release();
-                mask.release();
+                                                         RANSAC_THRESHOLD);
                 
                 Log.d(TAG, "Essential matrix estimated with default intrinsics");
             }
@@ -540,14 +530,18 @@ public class VisualOdometryProcessor {
      * @return TransformResult containing rotation, translation, and inlier points
      */
     public TransformResult decomposeEssentialMatrix(@NonNull Mat essentialMatrix,
-                                                   @NonNull List<Point2f> points1,
-                                                   @NonNull List<Point2f> points2) {
+                                                   @NonNull List<Point> points1,
+                                                   @NonNull List<Point> points2) {
         try {
             // Convert points to MatOfPoint2f
             MatOfPoint2f matPoints1 = new MatOfPoint2f();
             MatOfPoint2f matPoints2 = new MatOfPoint2f();
-            matPoints1.fromList(points1);
-            matPoints2.fromList(points2);
+            
+            // Convert Point list to Point array for MatOfPoint2f
+            Point[] pointArray1 = points1.toArray(new Point[0]);
+            Point[] pointArray2 = points2.toArray(new Point[0]);
+            matPoints1.fromArray(pointArray1);
+            matPoints2.fromArray(pointArray2);
             
             // Prepare output matrices
             Mat rotation = new Mat();
@@ -571,8 +565,8 @@ public class VisualOdometryProcessor {
                                                  cameraMatrixToUse, rotation, translation, mask);
             
             // Extract inlier points
-            List<Point2f> inlierPoints1 = new ArrayList<>();
-            List<Point2f> inlierPoints2 = new ArrayList<>();
+            List<Point> inlierPoints1 = new ArrayList<>();
+            List<Point> inlierPoints2 = new ArrayList<>();
             
             byte[] maskArray = new byte[(int)mask.total()];
             mask.get(0, 0, maskArray);
@@ -689,8 +683,8 @@ public class VisualOdometryProcessor {
     /**
      * Calculate simplified reprojection error
      */
-    private double calculateReprojectionError(@NonNull List<Point2f> points1, 
-                                            @NonNull List<Point2f> points2,
+    private double calculateReprojectionError(@NonNull List<Point> points1, 
+                                            @NonNull List<Point> points2,
                                             @NonNull Mat rotation, 
                                             @NonNull Mat translation,
                                             @NonNull Mat cameraMatrix) {
@@ -707,8 +701,8 @@ public class VisualOdometryProcessor {
             int count = Math.min(points1.size(), points2.size());
             
             for (int i = 0; i < count; i++) {
-                Point2f p1 = points1.get(i);
-                Point2f p2 = points2.get(i);
+                Point p1 = points1.get(i);
+                Point p2 = points2.get(i);
                 
                 double dx = p1.x - p2.x;
                 double dy = p1.y - p2.y;
