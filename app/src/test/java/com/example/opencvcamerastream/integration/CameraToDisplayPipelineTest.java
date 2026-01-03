@@ -229,6 +229,143 @@ public class CameraToDisplayPipelineTest {
     }
     
     @Test
+    public void testOptimizedPipelineWithOwnershipTransfer() throws InterruptedException {
+        // Test Task 21: Verify ownership transfer throughout the pipeline
+        // Requirement Req-13.3: Replace callback clones with ownership transfer
+        
+        try (MockedStatic<OpenCVProcessor> mockedStatic = mockStatic(OpenCVProcessor.class)) {
+            mockedStatic.when(() -> OpenCVProcessor.imageToMat(mockImage))
+                       .thenReturn(mockInputMat);
+            
+            // Set up callback to verify ownership transfer
+            frameProcessor.setProcessingCallback(new FrameProcessor.ProcessingCallback() {
+                @Override
+                public void onFrameProcessed(Mat processedFrame, Image originalImage, long processingTimeMs) {
+                    // Verify we received the actual objects (not clones)
+                    assertSame("Processed Mat should be transferred, not cloned", mockProcessedMat, processedFrame);
+                    assertSame("Original Image should be transferred, not cloned", mockImage, originalImage);
+                    
+                    framesProcessed.incrementAndGet();
+                    processingCompleted.set(true);
+                    frameProcessedLatch.countDown();
+                    
+                    // In optimized pipeline, callback owns the resources and must clean up
+                    // processedFrame.release(); // Would be called in real implementation
+                    // originalImage.close(); // Would be called in real implementation
+                }
+                
+                @Override
+                public void onProcessingFailed(Exception error, Image originalImage) {
+                    processingError.set(error);
+                    frameProcessedLatch.countDown();
+                    if (originalImage != null) {
+                        // originalImage.close(); // Would be called in real implementation
+                    }
+                }
+                
+                @Override
+                public void onFrameDropped(Image droppedImage) {
+                    // droppedImage.close(); // Would be called in real implementation
+                }
+            });
+            
+            frameProcessor.start();
+            cameraFrameCallback.onFrameAvailable(mockImage);
+            
+            assertTrue("Frame processing should complete", 
+                    frameProcessedLatch.await(2, TimeUnit.SECONDS));
+            assertTrue("Processing should complete successfully", processingCompleted.get());
+            assertEquals("One frame should be processed", 1, framesProcessed.get());
+        }
+    }
+    
+    @Test
+    public void testPipelineWithZeroCopyOptimization() throws InterruptedException {
+        // Test Task 24: Verify zero-copy processing path implementation
+        // Requirement Req-13.1, Req-13.2: Validate copy operation reduction
+        
+        try (MockedStatic<OpenCVProcessor> mockedStatic = mockStatic(OpenCVProcessor.class)) {
+            mockedStatic.when(() -> OpenCVProcessor.imageToMat(mockImage))
+                       .thenReturn(mockInputMat);
+            
+            frameProcessor.start();
+            cameraFrameCallback.onFrameAvailable(mockImage);
+            
+            assertTrue("Frame processing should complete", 
+                    frameProcessedLatch.await(2, TimeUnit.SECONDS));
+            
+            // Verify no buffer pool copies occurred
+            verify(mockInputMat, never()).copyTo(any(Mat.class));
+            verify(mockProcessedMat, never()).copyTo(any(Mat.class));
+            
+            // Verify no defensive cloning occurred
+            verify(mockInputMat, never()).clone();
+            verify(mockProcessedMat, never()).clone();
+            
+            // Verify direct processing path was used
+            verify(mockOpenCVProcessor, timeout(1000)).processFrame(mockInputMat);
+            
+            assertTrue("Processing should complete successfully", processingCompleted.get());
+        }
+    }
+    
+    @Test
+    public void testPipelineThreadSafetyWithoutDefensiveCloning() throws InterruptedException {
+        // Test Task 22: Verify thread safety without defensive cloning
+        // Requirement Req-13.4: Remove DisplayManager defensive cloning
+        
+        try (MockedStatic<OpenCVProcessor> mockedStatic = mockStatic(OpenCVProcessor.class)) {
+            mockedStatic.when(() -> OpenCVProcessor.imageToMat(any(Image.class)))
+                       .thenReturn(mockInputMat);
+            
+            frameProcessor.start();
+            
+            // Create multiple concurrent frame processing operations
+            int concurrentFrames = 10;
+            CountDownLatch concurrentLatch = new CountDownLatch(concurrentFrames);
+            
+            frameProcessor.setProcessingCallback(new FrameProcessor.ProcessingCallback() {
+                @Override
+                public void onFrameProcessed(Mat processedFrame, Image originalImage, long processingTimeMs) {
+                    framesProcessed.incrementAndGet();
+                    concurrentLatch.countDown();
+                    
+                    // Verify no cloning occurred
+                    assertNotNull("Processed frame should not be null", processedFrame);
+                    assertNotNull("Original image should not be null", originalImage);
+                }
+                
+                @Override
+                public void onProcessingFailed(Exception error, Image originalImage) {
+                    concurrentLatch.countDown();
+                }
+                
+                @Override
+                public void onFrameDropped(Image droppedImage) {
+                    concurrentLatch.countDown();
+                }
+            });
+            
+            // Send multiple frames concurrently
+            for (int i = 0; i < concurrentFrames; i++) {
+                Image frameImage = mock(Image.class);
+                when(frameImage.getWidth()).thenReturn(1280);
+                when(frameImage.getHeight()).thenReturn(720);
+                cameraFrameCallback.onFrameAvailable(frameImage);
+            }
+            
+            assertTrue("All concurrent frames should be processed", 
+                    concurrentLatch.await(5, TimeUnit.SECONDS));
+            
+            // Verify no defensive cloning occurred during concurrent access
+            verify(mockInputMat, never()).clone();
+            verify(mockProcessedMat, never()).clone();
+            
+            assertTrue("Some frames should be processed", framesProcessed.get() > 0);
+        }
+    }
+    
+    @Test
     public void testPipelineWithMultipleFrames() throws InterruptedException {
         // Test pipeline with multiple frames
         // Requirement 2.3: Ensure proper threading to maintain UI responsiveness

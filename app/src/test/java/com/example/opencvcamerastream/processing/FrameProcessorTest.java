@@ -340,8 +340,54 @@ public class FrameProcessorTest {
             // Verify processedMat.clone() was never called (ownership transfer, not clone)
             verify(mockProcessedMat, never()).clone();
             
-            // Callback is responsible for releasing the Mat
-            // In real implementation, callback must call processedMat.release()
+            // Verify callback is responsible for releasing the Mat
+            // The callback must call processedMat.release() when done
+            // This test verifies the ownership transfer contract
+        }
+    }
+    
+    @Test
+    public void testThreadSafetyWithoutDefensiveCloning() throws InterruptedException {
+        // Test Task 22: Verify thread safety without defensive cloning
+        // Requirement Req-13.4: Remove DisplayManager defensive cloning
+        
+        try (MockedStatic<OpenCVProcessor> mockedStatic = mockStatic(OpenCVProcessor.class)) {
+            mockedStatic.when(() -> OpenCVProcessor.imageToMat(any(Image.class)))
+                       .thenReturn(mockInputMat);
+            
+            frameProcessor.start();
+            
+            // Create multiple threads to test concurrent access
+            int threadCount = 4;
+            Thread[] threads = new Thread[threadCount];
+            
+            for (int i = 0; i < threadCount; i++) {
+                final int threadId = i;
+                threads[i] = new Thread(() -> {
+                    Image threadImage = mock(Image.class);
+                    when(threadImage.getWidth()).thenReturn(1280);
+                    when(threadImage.getHeight()).thenReturn(720);
+                    
+                    frameProcessor.processFrameAsync(threadImage);
+                });
+            }
+            
+            // Start all threads
+            for (Thread thread : threads) {
+                thread.start();
+            }
+            
+            // Wait for all threads to complete
+            for (Thread thread : threads) {
+                thread.join(1000);
+            }
+            
+            // Verify no defensive cloning occurred
+            verify(mockProcessedMat, never()).clone();
+            verify(mockInputMat, never()).clone();
+            
+            // Verify proper synchronization allowed concurrent access
+            verify(mockOpenCVProcessor, atLeast(1)).processFrame(any(Mat.class));
         }
     }
     
@@ -372,6 +418,75 @@ public class FrameProcessorTest {
             
             // Total time should be reasonable (< 200ms including test overhead)
             assertTrue("Processing should complete quickly", (endTime - startTime) < 200);
+        }
+    }
+    
+    @Test
+    public void testCopyOperationReduction() throws InterruptedException {
+        // Test Task 24: Verify copy operation reduction from 5-6 to 2 copies per frame
+        // Requirement Req-13.1, Req-13.2: Minimize framebuffer copies
+        
+        try (MockedStatic<OpenCVProcessor> mockedStatic = mockStatic(OpenCVProcessor.class)) {
+            mockedStatic.when(() -> OpenCVProcessor.imageToMat(mockImage))
+                       .thenReturn(mockInputMat);
+            
+            frameProcessor.start();
+            frameProcessor.processFrameAsync(mockImage);
+            
+            // Wait for processing to complete
+            Thread.sleep(100);
+            
+            // Verify no buffer pool copies occurred (Task 20)
+            verify(mockInputMat, never()).copyTo(any(Mat.class));
+            verify(mockProcessedMat, never()).copyTo(any(Mat.class));
+            
+            // Verify no defensive cloning occurred (Task 21, 22)
+            verify(mockInputMat, never()).clone();
+            verify(mockProcessedMat, never()).clone();
+            
+            // Verify direct processing path was used
+            verify(mockOpenCVProcessor, timeout(1000)).processFrame(mockInputMat);
+            
+            // Verify ownership transfer to callback (no clone)
+            verify(mockCallback, timeout(1000)).onFrameProcessed(
+                eq(mockProcessedMat), eq(mockImage), anyLong());
+        }
+    }
+    
+    @Test
+    public void testMemoryLeakPrevention() throws InterruptedException {
+        // Test Task 26: Validate memory leak prevention with optimized code
+        // Requirement Req-13: Ensure proper Mat lifecycle management
+        
+        try (MockedStatic<OpenCVProcessor> mockedStatic = mockStatic(OpenCVProcessor.class)) {
+            mockedStatic.when(() -> OpenCVProcessor.imageToMat(any(Image.class)))
+                       .thenReturn(mockInputMat);
+            
+            frameProcessor.start();
+            
+            // Process multiple frames to test memory management
+            for (int i = 0; i < 10; i++) {
+                Image frameImage = mock(Image.class);
+                when(frameImage.getWidth()).thenReturn(1280);
+                when(frameImage.getHeight()).thenReturn(720);
+                
+                frameProcessor.processFrameAsync(frameImage);
+            }
+            
+            // Wait for all processing to complete
+            Thread.sleep(500);
+            
+            // Verify all images were closed (resource cleanup)
+            verify(mockImage, atLeast(1)).close();
+            
+            // Verify no Mat objects were leaked through cloning
+            verify(mockInputMat, never()).clone();
+            verify(mockProcessedMat, never()).clone();
+            
+            // In real implementation, callback must release Mats
+            // This test verifies the ownership transfer contract is maintained
+            verify(mockCallback, atLeast(1)).onFrameProcessed(
+                any(Mat.class), any(Image.class), anyLong());
         }
     }
 }

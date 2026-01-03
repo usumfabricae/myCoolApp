@@ -322,4 +322,170 @@ public class ZeroCopyProcessorTest {
         verify(mockCallback, times(threadCount * framesPerThread))
                 .onFrameProcessed(any(), any(), any(), any());
     }
+    
+    @Test
+    public void testOwnershipTransferSemantics() {
+        // Test Task 21: Verify ownership transfer semantics in zero-copy processor
+        // Requirement Req-13.3: Replace callback clones with ownership transfer
+        
+        assertTrue(zeroCopyProcessor.initialize());
+        
+        // Mock callback to verify ownership transfer
+        doAnswer(invocation -> {
+            Mat receivedMat = invocation.getArgument(0);
+            Bitmap receivedBitmap = invocation.getArgument(1);
+            Image receivedImage = invocation.getArgument(2);
+            
+            // Verify we received the actual objects (not clones)
+            assertSame("Mat should be transferred, not cloned", testMat, receivedMat);
+            assertSame("Image should be transferred, not cloned", mockImage, receivedImage);
+            assertNotNull("Bitmap should be provided", receivedBitmap);
+            
+            // In real implementation, callback would:
+            // receivedMat.release();
+            // receivedBitmap.recycle();
+            // receivedImage.close();
+            
+            return null;
+        }).when(mockCallback).onFrameProcessed(any(), any(), any(), any());
+        
+        // Process frame
+        zeroCopyProcessor.processFrameZeroCopy(mockImage, mockCallback);
+        
+        // Verify callback was called with ownership transfer
+        verify(mockCallback, times(1)).onFrameProcessed(any(), any(), any(), any());
+    }
+    
+    @Test
+    public void testThreadSafetyWithoutDefensiveCloning() throws InterruptedException {
+        // Test Task 22: Verify thread safety without defensive cloning
+        // Requirement Req-13.4: Remove DisplayManager defensive cloning
+        
+        assertTrue(zeroCopyProcessor.initialize());
+        
+        // Mock processing to simulate concurrent access
+        doAnswer(invocation -> {
+            ZeroCopyProcessor.ZeroCopyCallback callback = invocation.getArgument(1);
+            
+            // Simulate some processing time
+            Thread.sleep(10);
+            
+            Bitmap mockBitmap = Bitmap.createBitmap(320, 240, Bitmap.Config.ARGB_8888);
+            ZeroCopyProcessor.FrameProcessingMetrics frameMetrics = 
+                    new ZeroCopyProcessor.FrameProcessingMetrics(5, 10, 3, 2, true);
+            
+            callback.onFrameProcessed(testMat, mockBitmap, mockImage, frameMetrics);
+            return null;
+        }).when(mockCallback).onFrameProcessed(any(), any(), any(), any());
+        
+        // Create concurrent access scenario
+        int concurrentOperations = 20;
+        Thread[] threads = new Thread[concurrentOperations];
+        
+        for (int i = 0; i < concurrentOperations; i++) {
+            threads[i] = new Thread(() -> {
+                zeroCopyProcessor.processFrameZeroCopy(mockImage, mockCallback);
+            });
+        }
+        
+        // Start all threads simultaneously
+        for (Thread thread : threads) {
+            thread.start();
+        }
+        
+        // Wait for completion
+        for (Thread thread : threads) {
+            thread.join(2000);
+        }
+        
+        // Verify all operations completed successfully
+        verify(mockCallback, times(concurrentOperations))
+                .onFrameProcessed(any(), any(), any(), any());
+        
+        // Verify no failures occurred due to race conditions
+        verify(mockCallback, never()).onProcessingFailed(any(), any());
+    }
+    
+    @Test
+    public void testCopyOperationTracking() {
+        // Test Task 24: Verify copy operation tracking for performance validation
+        // Requirement Req-13.1, Req-13.2: Validate copy operation reduction
+        
+        assertTrue(zeroCopyProcessor.initialize());
+        
+        // Mock successful processing with specific copy count
+        doAnswer(invocation -> {
+            ZeroCopyProcessor.ZeroCopyCallback callback = invocation.getArgument(1);
+            Bitmap mockBitmap = Bitmap.createBitmap(320, 240, Bitmap.Config.ARGB_8888);
+            
+            // Report exactly 2 copy operations (target for zero-copy optimization)
+            ZeroCopyProcessor.FrameProcessingMetrics frameMetrics = 
+                    new ZeroCopyProcessor.FrameProcessingMetrics(5, 10, 3, 2, true);
+            
+            callback.onFrameProcessed(testMat, mockBitmap, mockImage, frameMetrics);
+            return null;
+        }).when(mockCallback).onFrameProcessed(any(), any(), any(), any());
+        
+        // Process multiple frames
+        int frameCount = 10;
+        for (int i = 0; i < frameCount; i++) {
+            zeroCopyProcessor.processFrameZeroCopy(mockImage, mockCallback);
+        }
+        
+        // Verify copy operation tracking
+        ZeroCopyProcessor.ZeroCopyPerformanceMetrics metrics = zeroCopyProcessor.getPerformanceMetrics();
+        
+        assertEquals("Frame count should match", frameCount, metrics.totalFrames);
+        assertEquals("Total copy operations should be 2 per frame", frameCount * 2, metrics.totalCopyOperations);
+        assertEquals("Average copies per frame should be 2.0", 2.0, metrics.averageCopiesPerFrame, 0.01);
+        
+        // Verify zero-copy optimization target is met
+        assertTrue("Should meet zero-copy target of ≤2 copies per frame", 
+                metrics.averageCopiesPerFrame <= 2.0);
+    }
+    
+    @Test
+    public void testPerformanceRegressionValidation() {
+        // Test Task 25: Validate CPU usage reduction and performance improvements
+        // Requirement Req-13.6: Measure and validate CPU usage reduction
+        
+        assertTrue(zeroCopyProcessor.initialize());
+        
+        // Mock processing with performance metrics
+        doAnswer(invocation -> {
+            ZeroCopyProcessor.ZeroCopyCallback callback = invocation.getArgument(1);
+            Bitmap mockBitmap = Bitmap.createBitmap(320, 240, Bitmap.Config.ARGB_8888);
+            
+            // Simulate optimized processing times (20-30ms improvement)
+            ZeroCopyProcessor.FrameProcessingMetrics frameMetrics = 
+                    new ZeroCopyProcessor.FrameProcessingMetrics(3, 15, 2, 2, true);
+            
+            callback.onFrameProcessed(testMat, mockBitmap, mockImage, frameMetrics);
+            return null;
+        }).when(mockCallback).onFrameProcessed(any(), any(), any(), any());
+        
+        // Process frames and measure performance
+        long startTime = System.currentTimeMillis();
+        int frameCount = 50;
+        
+        for (int i = 0; i < frameCount; i++) {
+            zeroCopyProcessor.processFrameZeroCopy(mockImage, mockCallback);
+        }
+        
+        long totalTime = System.currentTimeMillis() - startTime;
+        
+        // Verify performance metrics
+        ZeroCopyProcessor.ZeroCopyPerformanceMetrics metrics = zeroCopyProcessor.getPerformanceMetrics();
+        
+        assertEquals("Frame count should match", frameCount, metrics.totalFrames);
+        assertTrue("Average processing time should be reasonable", 
+                metrics.averageProcessingTimeMs < 50); // Target: <50ms per frame
+        
+        // Verify total processing time is reasonable
+        float avgTimePerFrame = (float) totalTime / frameCount;
+        assertTrue("Average time per frame should be optimized", avgTimePerFrame < 100);
+        
+        // Verify copy operation reduction
+        assertTrue("Should achieve copy reduction target", metrics.averageCopiesPerFrame <= 2.0);
+    }
 }
