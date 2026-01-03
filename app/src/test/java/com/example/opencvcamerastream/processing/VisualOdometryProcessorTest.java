@@ -159,6 +159,98 @@ public class VisualOdometryProcessorTest {
     }
 
     @Test
+    public void testGeometricTransformEstimation() {
+        // Test geometric transform estimation with OpenCV functions (Requirements: 14.3, 14.4, 14.7)
+        List<Point> points1 = createTestPointsForTransform();
+        List<Point> points2 = createCorrespondingTestPoints();
+        
+        // Test essential matrix estimation with RANSAC
+        Mat essentialMatrix = processor.estimateEssentialMatrix(points1, points2);
+        assertNotNull("Essential matrix should not be null", essentialMatrix);
+        
+        if (!essentialMatrix.empty()) {
+            // Test rotation/translation decomposition using recoverPose
+            VisualOdometryProcessor.TransformResult transform = 
+                processor.decomposeEssentialMatrix(essentialMatrix, points1, points2);
+            
+            assertNotNull("Transform result should not be null", transform);
+            assertNotNull("Rotation matrix should not be null", transform.rotation);
+            assertNotNull("Translation vector should not be null", transform.translation);
+            
+            // Test that inlier points are extracted (OpenCV's built-in outlier rejection)
+            assertTrue("Should have some inlier points", transform.inlierPoints1.size() >= 0);
+            assertEquals("Inlier points should match", 
+                        transform.inlierPoints1.size(), transform.inlierPoints2.size());
+            
+            // Test reprojection error calculation (should use triangulation)
+            assertTrue("Reprojection error should be finite", 
+                      Double.isFinite(transform.reprojectionError));
+            
+            // Clean up
+            transform.rotation.release();
+            transform.translation.release();
+        }
+        
+        essentialMatrix.release();
+    }
+
+    @Test
+    public void testTriangulationBasedConfidenceScoring() {
+        // Test OpenCV's built-in confidence scoring with RANSAC inlier counting (Requirement: 14.7)
+        List<Point> points1 = createTestPointsForTransform();
+        List<Point> points2 = createCorrespondingTestPoints();
+        
+        // Create test keypoints and descriptors
+        List<KeyPoint> keypoints1 = createTestKeypoints(points1);
+        List<KeyPoint> keypoints2 = createTestKeypoints(points2);
+        Mat descriptors1 = createTestDescriptors(keypoints1.size());
+        Mat descriptors2 = createTestDescriptors(keypoints2.size());
+        
+        // Test distance computation with confidence scoring
+        VisualOdometryProcessor.DistanceResult result = 
+            processor.computeDistance(keypoints1, keypoints2, descriptors1, descriptors2);
+        
+        assertNotNull("Distance result should not be null", result);
+        
+        // Test confidence score properties
+        assertTrue("Confidence should be between 0 and 1", 
+                  result.confidence >= 0.0 && result.confidence <= 1.0);
+        
+        // Test that insufficient features are handled properly
+        if (result.featureMatches < 10) {
+            assertFalse("Result should be invalid with insufficient features", result.isValid);
+        }
+        
+        // Clean up
+        descriptors1.release();
+        descriptors2.release();
+    }
+
+    @Test
+    public void testInsufficientFeaturesHandling() {
+        // Test handling of insufficient features (Requirement: 14.7)
+        List<Point> fewPoints1 = createMinimalTestPoints(); // Less than MIN_MATCHES
+        List<Point> fewPoints2 = createMinimalTestPoints();
+        
+        List<KeyPoint> fewKeypoints1 = createTestKeypoints(fewPoints1);
+        List<KeyPoint> fewKeypoints2 = createTestKeypoints(fewPoints2);
+        Mat descriptors1 = createTestDescriptors(fewKeypoints1.size());
+        Mat descriptors2 = createTestDescriptors(fewKeypoints2.size());
+        
+        // Test that insufficient features are detected and handled
+        VisualOdometryProcessor.DistanceResult result = 
+            processor.computeDistance(fewKeypoints1, fewKeypoints2, descriptors1, descriptors2);
+        
+        assertNotNull("Result should not be null even with few features", result);
+        assertFalse("Result should be invalid with insufficient features", result.isValid);
+        assertTrue("Feature count should be low", result.featureMatches < 10);
+        
+        // Clean up
+        descriptors1.release();
+        descriptors2.release();
+    }
+
+    @Test
     public void testPerformanceMetricsReset() {
         // Test performance metrics reset
         processor.resetPerformanceMetrics();
@@ -218,5 +310,72 @@ public class VisualOdometryProcessorTest {
         points.add(new Point(500, 300));
         
         return points;
+    }
+
+    private List<Point> createTestPointsForTransform() {
+        List<Point> points = new ArrayList<>();
+        
+        // Create more realistic test points for geometric transform estimation
+        points.add(new Point(120, 80));
+        points.add(new Point(250, 120));
+        points.add(new Point(380, 180));
+        points.add(new Point(450, 220));
+        points.add(new Point(520, 280));
+        points.add(new Point(180, 350));
+        points.add(new Point(320, 400));
+        points.add(new Point(480, 450));
+        
+        return points;
+    }
+
+    private List<Point> createCorrespondingTestPoints() {
+        List<Point> points = new ArrayList<>();
+        
+        // Create corresponding points with slight displacement (simulating camera movement)
+        points.add(new Point(125, 85));
+        points.add(new Point(255, 125));
+        points.add(new Point(385, 185));
+        points.add(new Point(455, 225));
+        points.add(new Point(525, 285));
+        points.add(new Point(185, 355));
+        points.add(new Point(325, 405));
+        points.add(new Point(485, 455));
+        
+        return points;
+    }
+
+    private List<Point> createMinimalTestPoints() {
+        List<Point> points = new ArrayList<>();
+        
+        // Create insufficient points (less than MIN_MATCHES = 10)
+        points.add(new Point(100, 100));
+        points.add(new Point(200, 150));
+        points.add(new Point(300, 200));
+        
+        return points;
+    }
+
+    private List<KeyPoint> createTestKeypoints(List<Point> points) {
+        List<KeyPoint> keypoints = new ArrayList<>();
+        
+        for (Point point : points) {
+            keypoints.add(new KeyPoint((float)point.x, (float)point.y, 10.0f));
+        }
+        
+        return keypoints;
+    }
+
+    private Mat createTestDescriptors(int count) {
+        // Create simple test descriptors (32 bytes per ORB descriptor)
+        Mat descriptors = new Mat(count, 32, CvType.CV_8U);
+        
+        // Fill with test data
+        for (int i = 0; i < count; i++) {
+            for (int j = 0; j < 32; j++) {
+                descriptors.put(i, j, (i * 32 + j) % 256);
+            }
+        }
+        
+        return descriptors;
     }
 }

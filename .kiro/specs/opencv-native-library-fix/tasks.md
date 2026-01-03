@@ -259,7 +259,7 @@ This implementation provides a production-ready OpenCV camera streaming applicat
   - Use cv::DMatch filtering with Lowe's ratio test (built-in OpenCV functionality)
   - _Requirements: 14.1, 14.2_
 
-- [ ] 28. Implement geometric transform estimation with OpenCV functions
+- [x] 28. Implement geometric transform estimation with OpenCV functions
   - Use cv::findEssentialMat() with RANSAC for robust essential matrix estimation
   - Apply cv::recoverPose() for automatic rotation/translation decomposition
   - Leverage cv::triangulatePoints() for 3D point reconstruction if needed
