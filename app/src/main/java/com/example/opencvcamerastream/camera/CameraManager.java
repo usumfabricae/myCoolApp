@@ -59,8 +59,8 @@ public class CameraManager {
     // High-performance video configuration for 60 FPS
     private static final int TARGET_FPS = 60;
     private static final long TARGET_FRAME_INTERVAL_MS = 1000 / TARGET_FPS; // ~16.67ms for 60 FPS
-    private static final int HIGH_SPEED_VIDEO_WIDTH = 1920;
-    private static final int HIGH_SPEED_VIDEO_HEIGHT = 1080;
+    private static final int HIGH_SPEED_VIDEO_WIDTH = 960;
+    private static final int HIGH_SPEED_VIDEO_HEIGHT = 540;
     
     // Frame rate management
     private static final long STANDARD_FRAME_INTERVAL_MS = 33; // ~30 FPS fallback
@@ -136,7 +136,7 @@ public class CameraManager {
      * Camera configuration class with high-speed video support
      */
     public static class CameraConfig {
-        public Size preferredSize = new Size(HIGH_SPEED_VIDEO_WIDTH, HIGH_SPEED_VIDEO_HEIGHT); // Default to 1920x1080
+        public Size preferredSize = new Size(HIGH_SPEED_VIDEO_WIDTH, HIGH_SPEED_VIDEO_HEIGHT); // Default to 960x540
         public int imageFormat = IMAGE_FORMAT;
         public boolean enableAutoFocus = true;
         public boolean enableAutoExposure = true;
@@ -151,7 +151,7 @@ public class CameraManager {
         }
         
         /**
-         * Create configuration optimized for high-speed video (60 FPS at 1920x1080)
+         * Create configuration optimized for high-speed video (60 FPS at 960x540)
          */
         public static CameraConfig createHighSpeedVideoConfig() {
             CameraConfig config = new CameraConfig();
@@ -445,7 +445,7 @@ public class CameraManager {
     }
     
     /**
-     * Initialize camera with high-speed video configuration (60 FPS at 1920x1080)
+     * Initialize camera with high-speed video configuration (60 FPS at 960x540)
      * Requirement 1.2: Initialize camera when permissions are granted
      * 
      * @return true if initialization successful, false otherwise
@@ -1802,6 +1802,7 @@ public class CameraManager {
             Log.i(TAG, "Checking specific resolutions:");
             checkResolutionSupport(map, 1920, 1080, "1080p");
             checkResolutionSupport(map, 1280, 720, "720p");
+            checkResolutionSupport(map, 960, 540, "540p");
             checkResolutionSupport(map, 640, 480, "480p");
             
             // Hardware level
