@@ -358,20 +358,20 @@ public class OptimizedPipelineValidationTest {
     public void testCopyOperationTracking() {
         // Test copy operation tracking functionality
         
-        copyTracker.recordCopyOperation("Image→Mat", 5);
-        copyTracker.recordCopyOperation("Mat→Bitmap", 3);
+        copyTracker.recordCopyOperation(CopyOperationTracker.CopyType.IMAGE_TO_MAT, 5, 1280 * 720 * 3);
+        copyTracker.recordCopyOperation(CopyOperationTracker.CopyType.MAT_TO_BITMAP, 3, 1280 * 720 * 4);
         
-        CopyOperationTracker.CopyMetrics metrics = copyTracker.getMetrics();
+        CopyOperationTracker.CopyOperationMetrics metrics = copyTracker.getMetrics();
         
-        assertEquals("Should have 2 copy operations", 2, metrics.totalCopyOperations);
-        assertEquals("Total copy time should be 8ms", 8, metrics.totalCopyTimeMs);
-        assertEquals("Average copy time should be 4ms", 4.0, metrics.averageCopyTimeMs, 0.01);
+        assertEquals("Should have 2 copy operations", 2, metrics.getTotalCopies());
+        assertEquals("Total copy time should be 8ms", 8, metrics.getTotalTimeMs());
+        assertEquals("Average copy time should be 4ms", 4.0, metrics.getAverageTimePerCopy(), 0.01);
         
         // Verify specific operation tracking
-        assertTrue("Should track Image→Mat operation", 
-                metrics.operationTimes.containsKey("Image→Mat"));
-        assertTrue("Should track Mat→Bitmap operation", 
-                metrics.operationTimes.containsKey("Mat→Bitmap"));
+        assertEquals("Should track Image→Mat operation", 1, 
+                metrics.getCopyCount(CopyOperationTracker.CopyType.IMAGE_TO_MAT));
+        assertEquals("Should track Mat→Bitmap operation", 1, 
+                metrics.getCopyCount(CopyOperationTracker.CopyType.MAT_TO_BITMAP));
     }
     
     @Test
