@@ -1725,7 +1725,6 @@ public class CameraManager {
                     (long) rhs.getWidth() * rhs.getHeight());
         }
     }
-}
     
     /**
      * Log comprehensive camera capabilities for debugging
@@ -1876,3 +1875,4 @@ public class CameraManager {
             }
         }
     }
+}

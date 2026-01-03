@@ -62,6 +62,11 @@ Write-Host "Collecting camera system logs..." -ForegroundColor Cyan
 $CameraLogFile = "$LogsPath/camera_logs_$Timestamp.txt"
 adb logcat -d -s "CameraService" "Camera2" "CameraManager" | Out-File -FilePath $CameraLogFile -Encoding UTF8
 
+# Collect camera capabilities logs (new comprehensive logging)
+Write-Host "Collecting camera capabilities and FPS information..." -ForegroundColor Cyan
+$CameraCapabilitiesFile = "$LogsPath/camera_capabilities_$Timestamp.txt"
+adb logcat -d | Select-String -Pattern "CAMERA CAPABILITIES|FPS range|High-speed|Hardware support level|Camera facing|Output size|Selected.*camera" | Out-File -FilePath $CameraCapabilitiesFile -Encoding UTF8
+
 # Collect OpenCV-specific logs
 Write-Host "Collecting OpenCV logs..." -ForegroundColor Cyan
 $OpenCVLogFile = "$LogsPath/opencv_logs_$Timestamp.txt"
@@ -129,6 +134,7 @@ Output Directory: $LogsPath
 Collected Files:
 - Application Logs: app_logs_$Timestamp.txt
 - Camera Logs: camera_logs_$Timestamp.txt
+- Camera Capabilities: camera_capabilities_$Timestamp.txt
 - OpenCV Logs: opencv_logs_$Timestamp.txt
 - Memory Info: memory_info_$Timestamp.txt
 - Camera Status: camera_status_$Timestamp.txt
@@ -142,11 +148,20 @@ Analysis Tips:
 1. Check crash_logs for fatal errors and exceptions
 2. Review app_logs for application-specific issues
 3. Examine camera_logs for Camera2 API problems
-4. Check memory_info for memory leaks or OOM issues
-5. Review permissions for Android 10 compliance issues
+4. Check camera_capabilities for supported FPS ranges and resolutions
+5. Check memory_info for memory leaks or OOM issues
+6. Review permissions for Android 10 compliance issues
+
+Camera Capability Analysis:
+- Look for "CAMERA CAPABILITIES REPORT" sections
+- Check "FPS Range:" entries for supported frame rates
+- Find "High-speed FPS ranges for 1080p:" for 60 FPS support
+- Review "Hardware support level:" for camera capabilities
+- Check "60 FPS not available" warnings
 
 Common Error Patterns to Look For:
 - Camera permission denials
+- "60 FPS not available, using highest FPS range" warnings
 - OpenCV initialization failures
 - Memory allocation errors
 - Native library loading issues
