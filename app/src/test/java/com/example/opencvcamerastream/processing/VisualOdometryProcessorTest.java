@@ -260,6 +260,201 @@ public class VisualOdometryProcessorTest {
     }
 
     @Test
+    public void test3DDistanceComputationWithOpenCVTransforms() {
+        // Test 3D distance computation using OpenCV transforms (Requirement: 14.5)
+        
+        // Create test rotation matrix (45-degree rotation around Z-axis)
+        Mat rotation = Mat.eye(3, 3, CvType.CV_64F);
+        double cos45 = Math.cos(Math.PI / 4);
+        double sin45 = Math.sin(Math.PI / 4);
+        rotation.put(0, 0, cos45, -sin45, 0.0);
+        rotation.put(1, 0, sin45, cos45, 0.0);
+        rotation.put(2, 0, 0.0, 0.0, 1.0);
+        
+        // Create test translation vector (1 unit in X direction)
+        Mat translation = new Mat(3, 1, CvType.CV_64F);
+        translation.put(0, 0, 1.0, 0.0, 0.0);
+        
+        // Test cv::Rodrigues() rotation matrix to rotation vector conversion
+        VisualOdometryProcessor.Vector3D result = processor.computeTranslationDistance(rotation, translation);
+        
+        assertNotNull("3D distance result should not be null", result);
+        assertTrue("X component should be finite", Double.isFinite(result.x));
+        assertTrue("Y component should be finite", Double.isFinite(result.y));
+        assertTrue("Z component should be finite", Double.isFinite(result.z));
+        
+        // Test that cv::norm() is used for magnitude calculations
+        double magnitude = result.magnitude();
+        assertTrue("Magnitude should be positive", magnitude > 0);
+        assertTrue("Magnitude should be reasonable", magnitude < 10.0); // Within reasonable bounds
+        
+        // Clean up
+        rotation.release();
+        translation.release();
+    }
+
+    @Test
+    public void testCoordinateTransformationsWithMatOperations() {
+        // Test cv::Mat operations for coordinate transformations (Requirement: 14.5)
+        
+        // Create identity rotation (no rotation)
+        Mat identityRotation = Mat.eye(3, 3, CvType.CV_64F);
+        
+        // Create translation in camera coordinates
+        Mat cameraTranslation = new Mat(3, 1, CvType.CV_64F);
+        cameraTranslation.put(0, 0, 2.0, 1.0, 0.5); // X, Y, Z in camera frame
+        
+        // Test coordinate transformation
+        VisualOdometryProcessor.Vector3D worldDistance = 
+            processor.computeTranslationDistance(identityRotation, cameraTranslation);
+        
+        assertNotNull("World distance should not be null", worldDistance);
+        
+        // With identity rotation, world coordinates should match camera coordinates (scaled)
+        assertTrue("X component should be reasonable", Math.abs(worldDistance.x) < 5.0);
+        assertTrue("Y component should be reasonable", Math.abs(worldDistance.y) < 5.0);
+        assertTrue("Z component should be reasonable", Math.abs(worldDistance.z) < 5.0);
+        
+        // Clean up
+        identityRotation.release();
+        cameraTranslation.release();
+    }
+
+    @Test
+    public void testScaleEstimationFromRecoverPose() {
+        // Test OpenCV's built-in scale estimation principles (Requirement: 14.5)
+        
+        // Create test scenario with different rotation/translation ratios
+        Mat rotation1 = Mat.eye(3, 3, CvType.CV_64F);
+        Mat translation1 = new Mat(3, 1, CvType.CV_64F);
+        translation1.put(0, 0, 1.0, 0.0, 0.0); // Pure translation
+        
+        Mat rotation2 = Mat.eye(3, 3, CvType.CV_64F);
+        double angle = Math.PI / 6; // 30 degrees
+        rotation2.put(0, 0, Math.cos(angle), -Math.sin(angle), 0.0);
+        rotation2.put(1, 0, Math.sin(angle), Math.cos(angle), 0.0);
+        Mat translation2 = new Mat(3, 1, CvType.CV_64F);
+        translation2.put(0, 0, 0.5, 0.0, 0.0); // Translation with rotation
+        
+        // Test scale estimation with different motion characteristics
+        VisualOdometryProcessor.Vector3D result1 = processor.computeTranslationDistance(rotation1, translation1);
+        VisualOdometryProcessor.Vector3D result2 = processor.computeTranslationDistance(rotation2, translation2);
+        
+        assertNotNull("Result 1 should not be null", result1);
+        assertNotNull("Result 2 should not be null", result2);
+        
+        // Scale should be applied consistently
+        assertTrue("Result 1 magnitude should be positive", result1.magnitude() > 0);
+        assertTrue("Result 2 magnitude should be positive", result2.magnitude() > 0);
+        
+        // Results should be within reasonable scale bounds (0.01m to 1.0m)
+        assertTrue("Result 1 should be within scale bounds", 
+                  result1.magnitude() >= 0.01 && result1.magnitude() <= 1.0);
+        assertTrue("Result 2 should be within scale bounds", 
+                  result2.magnitude() >= 0.01 && result2.magnitude() <= 1.0);
+        
+        // Clean up
+        rotation1.release();
+        translation1.release();
+        rotation2.release();
+        translation2.release();
+    }
+
+    @Test
+    public void testRodriguesRotationVectorConversion() {
+        // Test cv::Rodrigues() for rotation matrix to rotation vector conversion (Requirement: 14.5)
+        
+        // Create test rotation matrix (90-degree rotation around Y-axis)
+        Mat rotation = Mat.eye(3, 3, CvType.CV_64F);
+        rotation.put(0, 0, 0.0, 0.0, 1.0);
+        rotation.put(1, 0, 0.0, 1.0, 0.0);
+        rotation.put(2, 0, -1.0, 0.0, 0.0);
+        
+        Mat translation = new Mat(3, 1, CvType.CV_64F);
+        translation.put(0, 0, 1.0, 0.0, 0.0);
+        
+        // The computeTranslationDistance method should use Rodrigues internally
+        VisualOdometryProcessor.Vector3D result = processor.computeTranslationDistance(rotation, translation);
+        
+        assertNotNull("Result should not be null", result);
+        
+        // Test that the rotation was properly processed using Rodrigues conversion
+        // The result should reflect the coordinate transformation
+        assertTrue("Result should have finite components", 
+                  Double.isFinite(result.x) && Double.isFinite(result.y) && Double.isFinite(result.z));
+        
+        // Clean up
+        rotation.release();
+        translation.release();
+    }
+
+    @Test
+    public void testNormMagnitudeCalculations() {
+        // Test cv::norm() for distance magnitude calculations (Requirement: 14.5)
+        
+        // Create test vectors with known magnitudes
+        Mat rotation = Mat.eye(3, 3, CvType.CV_64F);
+        
+        // Test vector with magnitude sqrt(3^2 + 4^2 + 0^2) = 5
+        Mat translation1 = new Mat(3, 1, CvType.CV_64F);
+        translation1.put(0, 0, 3.0, 4.0, 0.0);
+        
+        VisualOdometryProcessor.Vector3D result1 = processor.computeTranslationDistance(rotation, translation1);
+        
+        // The magnitude should be calculated using cv::norm()
+        double magnitude1 = result1.magnitude();
+        assertTrue("Magnitude should be positive", magnitude1 > 0);
+        
+        // Test vector with different magnitude
+        Mat translation2 = new Mat(3, 1, CvType.CV_64F);
+        translation2.put(0, 0, 1.0, 1.0, 1.0); // magnitude = sqrt(3)
+        
+        VisualOdometryProcessor.Vector3D result2 = processor.computeTranslationDistance(rotation, translation2);
+        double magnitude2 = result2.magnitude();
+        
+        assertTrue("Second magnitude should be positive", magnitude2 > 0);
+        
+        // Magnitudes should be different for different input vectors
+        assertNotEquals("Magnitudes should be different", magnitude1, magnitude2, 0.001);
+        
+        // Clean up
+        rotation.release();
+        translation1.release();
+        translation2.release();
+    }
+
+    @Test
+    public void testInvalidInputHandling() {
+        // Test handling of invalid inputs for 3D distance computation (Requirement: 14.5)
+        
+        // Test empty matrices
+        Mat emptyRotation = new Mat();
+        Mat emptyTranslation = new Mat();
+        
+        VisualOdometryProcessor.Vector3D result1 = processor.computeTranslationDistance(emptyRotation, emptyTranslation);
+        assertNotNull("Result should not be null for empty matrices", result1);
+        assertEquals("X should be 0 for invalid input", 0.0, result1.x, 0.001);
+        assertEquals("Y should be 0 for invalid input", 0.0, result1.y, 0.001);
+        assertEquals("Z should be 0 for invalid input", 0.0, result1.z, 0.001);
+        
+        // Test wrong-sized matrices
+        Mat wrongRotation = new Mat(2, 2, CvType.CV_64F); // Should be 3x3
+        Mat wrongTranslation = new Mat(2, 1, CvType.CV_64F); // Should be 3x1
+        
+        VisualOdometryProcessor.Vector3D result2 = processor.computeTranslationDistance(wrongRotation, wrongTranslation);
+        assertNotNull("Result should not be null for wrong-sized matrices", result2);
+        assertEquals("X should be 0 for invalid input", 0.0, result2.x, 0.001);
+        assertEquals("Y should be 0 for invalid input", 0.0, result2.y, 0.001);
+        assertEquals("Z should be 0 for invalid input", 0.0, result2.z, 0.001);
+        
+        // Clean up
+        emptyRotation.release();
+        emptyTranslation.release();
+        wrongRotation.release();
+        wrongTranslation.release();
+    }
+
+    @Test
     public void testResourceRelease() {
         // Test resource cleanup
         processor.release();

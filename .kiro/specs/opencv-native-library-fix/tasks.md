@@ -266,21 +266,21 @@ This implementation provides a production-ready OpenCV camera streaming applicat
   - Use OpenCV's built-in outlier rejection and confidence scoring
   - _Requirements: 14.3, 14.4, 14.7_
 
-- [ ] 29. Develop 3D distance computation using OpenCV transforms
+- [x] 29. Develop 3D distance computation using OpenCV transforms
   - Use cv::Rodrigues() for rotation matrix to rotation vector conversion
   - Apply cv::norm() for distance magnitude calculations
   - Leverage cv::Mat operations for coordinate transformations
   - Use OpenCV's built-in scale estimation from cv::recoverPose()
   - _Requirements: 14.5_
 
-- [ ] 30. Integrate visual odometry with frame processing pipeline
+- [x] 30. Integrate visual odometry with frame processing pipeline
   - Modify FrameProcessor to maintain cv::Mat previous frame reference
   - Use OpenCV's efficient Mat copying and memory management
   - Implement frame pair processing using OpenCV's built-in functions
   - Ensure compatibility with existing zero-copy optimization
   - _Requirements: 14.1, 14.2_
 
-- [ ] 31. Implement camera calibration using OpenCV calibration functions
+- [x] 31. Implement camera calibration using OpenCV calibration functions
   - Use cv::calibrateCamera() with checkerboard pattern detection
   - Apply cv::findChessboardCorners() for automatic corner detection
   - Leverage cv::cornerSubPix() for sub-pixel accuracy

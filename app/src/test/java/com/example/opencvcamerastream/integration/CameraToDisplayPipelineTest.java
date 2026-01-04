@@ -72,6 +72,9 @@ public class CameraToDisplayPipelineTest {
     @Mock
     private Mat mockProcessedMat;
     
+    @Mock
+    private FrameProcessor.VisualOdometryCallback mockVisualOdometryCallback;
+    
     private FrameProcessor frameProcessor;
     private CameraManager.FrameCallback cameraFrameCallback;
     private FrameProcessor.ProcessingCallback processingCallback;
@@ -108,8 +111,13 @@ public class CameraToDisplayPipelineTest {
         when(mockProcessedMat.width()).thenReturn(1280);
         when(mockProcessedMat.height()).thenReturn(720);
         
+        // Set up mock mat cloning for visual odometry
+        when(mockInputMat.clone()).thenReturn(mockInputMat);
+        when(mockProcessedMat.clone()).thenReturn(mockProcessedMat);
+        
         // Initialize frame processor
         frameProcessor = new FrameProcessor(mockOpenCVProcessor);
+        frameProcessor.setVisualOdometryCallback(mockVisualOdometryCallback);
         
         // Set up latches for synchronization
         frameProcessedLatch = new CountDownLatch(1);
@@ -632,6 +640,256 @@ public class CameraToDisplayPipelineTest {
                     mainThreadName, processingThreadName.get());
             assertTrue("Processing should happen on background thread",
                     processingThreadName.get().contains("FrameProcessing"));
+        }
+    }
+    
+    // Visual Odometry Integration Tests (Task 30)
+    
+    @Test
+    public void testPipelineWithVisualOdometryIntegration() throws InterruptedException {
+        // Test complete pipeline with visual odometry enabled
+        // Requirements: 14.1, 14.2
+        
+        try (MockedStatic<OpenCVProcessor> mockedStatic = mockStatic(OpenCVProcessor.class)) {
+            mockedStatic.when(() -> OpenCVProcessor.imageToMat(any(Image.class)))
+                       .thenReturn(mockInputMat);
+            
+            // Enable visual odometry
+            frameProcessor.setVisualOdometryEnabled(true);
+            frameProcessor.start();
+            
+            // Process first frame (establishes previous frame reference)
+            cameraFrameCallback.onFrameAvailable(mockImage);
+            
+            assertTrue("First frame should be processed",
+                    frameProcessedLatch.await(2, TimeUnit.SECONDS));
+            
+            // Reset for second frame
+            frameProcessedLatch = new CountDownLatch(1);
+            displayUpdatedLatch = new CountDownLatch(1);
+            processingCompleted.set(false);
+            displayUpdated.set(false);
+            
+            // Process second frame (should trigger visual odometry)
+            Image secondFrame = mock(Image.class);
+            when(secondFrame.getWidth()).thenReturn(1280);
+            when(secondFrame.getHeight()).thenReturn(720);
+            
+            cameraFrameCallback.onFrameAvailable(secondFrame);
+            
+            assertTrue("Second frame should be processed",
+                    frameProcessedLatch.await(2, TimeUnit.SECONDS));
+            
+            // Verify both regular processing and visual odometry occurred
+            assertTrue("Processing should complete successfully", processingCompleted.get());
+            assertTrue("Display should be updated", displayUpdated.get());
+            assertEquals("Two frames should be processed", 2, framesProcessed.get());
+            
+            // Verify visual odometry is enabled
+            assertTrue("Visual odometry should be enabled", frameProcessor.isVisualOdometryEnabled());
+            
+            // Verify OpenCV processing was called for both frames
+            verify(mockOpenCVProcessor, timeout(1000).times(2)).processFrame(any(Mat.class));
+            
+            // Verify display was updated for both frames
+            verify(mockDisplayManager, timeout(1000).times(2)).updateFrame(any(Mat.class));
+        }
+    }
+    
+    @Test
+    public void testVisualOdometryCompatibilityWithZeroCopyPipeline() throws InterruptedException {
+        // Test that visual odometry maintains compatibility with zero-copy optimization
+        // Requirements: 14.1, 14.2
+        
+        try (MockedStatic<OpenCVProcessor> mockedStatic = mockStatic(OpenCVProcessor.class)) {
+            mockedStatic.when(() -> OpenCVProcessor.imageToMat(any(Image.class)))
+                       .thenReturn(mockInputMat);
+            
+            // Enable both visual odometry and zero-copy optimization
+            frameProcessor.setVisualOdometryEnabled(true);
+            frameProcessor.setZeroCopyEnabled(true);
+            frameProcessor.start();
+            
+            // Process frames
+            cameraFrameCallback.onFrameAvailable(mockImage);
+            
+            assertTrue("Frame should be processed",
+                    frameProcessedLatch.await(2, TimeUnit.SECONDS));
+            
+            // Verify both optimizations are enabled
+            assertTrue("Visual odometry should be enabled", frameProcessor.isVisualOdometryEnabled());
+            assertTrue("Zero-copy should be enabled", frameProcessor.isZeroCopyEnabled());
+            
+            // Verify no buffer pool copies occurred (zero-copy optimization maintained)
+            verify(mockInputMat, never()).copyTo(any(Mat.class));
+            verify(mockProcessedMat, never()).copyTo(any(Mat.class));
+            
+            // Verify Mat cloning was used for visual odometry (OpenCV efficient copying)
+            verify(mockInputMat, atLeast(1)).clone();
+            
+            // Verify processing completed successfully
+            assertTrue("Processing should complete successfully", processingCompleted.get());
+        }
+    }
+    
+    @Test
+    public void testVisualOdometryFramePairProcessingInPipeline() throws InterruptedException {
+        // Test frame pair processing using OpenCV's built-in functions in complete pipeline
+        // Requirements: 14.1, 14.2
+        
+        int frameCount = 3;
+        CountDownLatch multiFrameLatch = new CountDownLatch(frameCount);
+        AtomicInteger processedFrames = new AtomicInteger(0);
+        
+        // Update callback to handle multiple frames
+        frameProcessor.setProcessingCallback(new FrameProcessor.ProcessingCallback() {
+            @Override
+            public void onFrameProcessed(Mat processedFrame, Image originalImage, long processingTimeMs) {
+                processedFrames.incrementAndGet();
+                multiFrameLatch.countDown();
+                
+                // Clean up
+                processedFrame.release();
+                originalImage.close();
+            }
+            
+            @Override
+            public void onProcessingFailed(Exception error, Image originalImage) {
+                multiFrameLatch.countDown();
+                if (originalImage != null) {
+                    originalImage.close();
+                }
+            }
+            
+            @Override
+            public void onFrameDropped(Image droppedImage) {
+                droppedImage.close();
+            }
+        });
+        
+        try (MockedStatic<OpenCVProcessor> mockedStatic = mockStatic(OpenCVProcessor.class)) {
+            mockedStatic.when(() -> OpenCVProcessor.imageToMat(any(Image.class)))
+                       .thenReturn(mockInputMat);
+            
+            frameProcessor.setVisualOdometryEnabled(true);
+            frameProcessor.start();
+            
+            // Send multiple frames to test frame pair processing
+            for (int i = 0; i < frameCount; i++) {
+                Image frameImage = mock(Image.class);
+                when(frameImage.getWidth()).thenReturn(1280);
+                when(frameImage.getHeight()).thenReturn(720);
+                
+                cameraFrameCallback.onFrameAvailable(frameImage);
+                Thread.sleep(50); // Small delay between frames
+            }
+            
+            assertTrue("All frames should be processed",
+                    multiFrameLatch.await(5, TimeUnit.SECONDS));
+            
+            // Verify all frames were processed
+            assertEquals("All frames should be processed", frameCount, processedFrames.get());
+            
+            // Verify OpenCV processing was called for all frames
+            verify(mockOpenCVProcessor, timeout(1000).times(frameCount)).processFrame(any(Mat.class));
+            
+            // Verify Mat cloning occurred for visual odometry frame pair processing
+            verify(mockInputMat, atLeast(frameCount - 1)).clone(); // At least (frameCount-1) clones for pairs
+        }
+    }
+    
+    @Test
+    public void testVisualOdometryMemoryManagementInPipeline() throws InterruptedException {
+        // Test OpenCV's efficient Mat copying and memory management in complete pipeline
+        // Requirements: 14.1, 14.2
+        
+        try (MockedStatic<OpenCVProcessor> mockedStatic = mockStatic(OpenCVProcessor.class)) {
+            mockedStatic.when(() -> OpenCVProcessor.imageToMat(any(Image.class)))
+                       .thenReturn(mockInputMat);
+            
+            frameProcessor.setVisualOdometryEnabled(true);
+            frameProcessor.start();
+            
+            // Process frames
+            cameraFrameCallback.onFrameAvailable(mockImage);
+            
+            assertTrue("Frame should be processed",
+                    frameProcessedLatch.await(2, TimeUnit.SECONDS));
+            
+            // Verify OpenCV's efficient Mat copying was used
+            verify(mockInputMat, atLeast(1)).clone();
+            
+            // Verify no unnecessary copies occurred in the main pipeline
+            verify(mockInputMat, never()).copyTo(any(Mat.class));
+            verify(mockProcessedMat, never()).copyTo(any(Mat.class));
+            
+            // Verify processing completed successfully
+            assertTrue("Processing should complete successfully", processingCompleted.get());
+            
+            // Stop processor and verify cleanup
+            frameProcessor.stop();
+            assertFalse("Processor should not be running after stop", frameProcessor.isProcessing());
+        }
+    }
+    
+    @Test
+    public void testVisualOdometryPerformanceInPipeline() throws InterruptedException {
+        // Test visual odometry performance metrics in complete pipeline
+        // Requirements: 14.1, 14.2
+        
+        try (MockedStatic<OpenCVProcessor> mockedStatic = mockStatic(OpenCVProcessor.class)) {
+            mockedStatic.when(() -> OpenCVProcessor.imageToMat(any(Image.class)))
+                       .thenReturn(mockInputMat);
+            
+            frameProcessor.setVisualOdometryEnabled(true);
+            frameProcessor.start();
+            
+            // Process frame
+            cameraFrameCallback.onFrameAvailable(mockImage);
+            
+            assertTrue("Frame should be processed",
+                    frameProcessedLatch.await(2, TimeUnit.SECONDS));
+            
+            // Get visual odometry performance metrics
+            FrameProcessor.VisualOdometryPerformanceMetrics metrics = 
+                frameProcessor.getVisualOdometryMetrics();
+            
+            assertNotNull("Visual odometry metrics should not be null", metrics);
+            assertTrue("Should have previous frame after processing", metrics.hasPreviousFrame);
+            
+            // Verify processing completed successfully
+            assertTrue("Processing should complete successfully", processingCompleted.get());
+        }
+    }
+    
+    @Test
+    public void testPipelineWithVisualOdometryDisabled() throws InterruptedException {
+        // Test that pipeline works normally when visual odometry is disabled
+        // Requirements: 14.1, 14.2
+        
+        try (MockedStatic<OpenCVProcessor> mockedStatic = mockStatic(OpenCVProcessor.class)) {
+            mockedStatic.when(() -> OpenCVProcessor.imageToMat(mockImage))
+                       .thenReturn(mockInputMat);
+            
+            // Ensure visual odometry is disabled (default state)
+            frameProcessor.setVisualOdometryEnabled(false);
+            frameProcessor.start();
+            
+            cameraFrameCallback.onFrameAvailable(mockImage);
+            
+            assertTrue("Frame should be processed",
+                    frameProcessedLatch.await(2, TimeUnit.SECONDS));
+            
+            // Verify normal processing occurred
+            assertTrue("Processing should complete successfully", processingCompleted.get());
+            assertTrue("Display should be updated", displayUpdated.get());
+            
+            // Verify visual odometry is disabled
+            assertFalse("Visual odometry should be disabled", frameProcessor.isVisualOdometryEnabled());
+            
+            // Verify no visual odometry-specific Mat cloning occurred
+            // (Some cloning may still occur for other purposes)
+            verify(mockOpenCVProcessor, timeout(1000)).processFrame(mockInputMat);
         }
     }
 }

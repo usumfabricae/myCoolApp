@@ -13,6 +13,7 @@ import java.nio.ByteBuffer;
 
 import com.example.opencvcamerastream.error.ErrorHandler;
 import com.example.opencvcamerastream.error.PerformanceMonitor;
+import com.example.opencvcamerastream.processing.VisualOdometryProcessor;
 
 /**
  * OpenCVProcessor handles all OpenCV image processing operations
@@ -43,7 +44,8 @@ public class OpenCVProcessor {
         COLOR_HSV,      // HSV color space conversion
         COLOR_LAB,      // LAB color space conversion
         BLUR,           // Gaussian blur filter
-        SHARPEN         // Sharpening filter
+        SHARPEN,        // Sharpening filter
+        VISUAL_ODOMETRY // Visual odometry distance measurement
     }
     
     // Processing configuration
@@ -65,6 +67,12 @@ public class OpenCVProcessor {
         // Sharpen parameters
         public float sharpenStrength = 1.0f;
         
+        // Visual odometry parameters
+        public boolean enableVisualOdometry = false;
+        public boolean enableDistanceDisplay = true;
+        public boolean enableCalibrationMode = false;
+        public String calibrationFilePath = null;
+        
         public ProcessingConfig() {}
         
         public ProcessingConfig(ProcessingMode mode) {
@@ -83,6 +91,11 @@ public class OpenCVProcessor {
     private ProcessingCallback callback;
     private boolean isInitialized = false;
     private long lastProcessingTime = 0;
+    
+    // Visual odometry components
+    private VisualOdometryProcessor visualOdometryProcessor;
+    private Mat previousFrame = null;
+    private boolean isVisualOdometryEnabled = false;
     
     // Error handling and performance monitoring
     private ErrorHandler errorHandler;
@@ -163,6 +176,9 @@ public class OpenCVProcessor {
             
             // OpenCV initialization will be handled by MainActivity's OpenCV loader callback
             // This method sets up the processor's internal state
+            
+            // Initialize visual odometry processor with Samsung S9 defaults
+            initializeVisualOdometry();
             
             isInitialized = true;
             
@@ -386,6 +402,10 @@ public class OpenCVProcessor {
                 
             case SHARPEN:
                 processedFrame = applySharpen(inputFrame);
+                break;
+                
+            case VISUAL_ODOMETRY:
+                processedFrame = applyVisualOdometry(inputFrame);
                 break;
                 
             default:
@@ -770,11 +790,241 @@ public class OpenCVProcessor {
     }
     
     /**
+     * Initialize visual odometry processor with Samsung S9 camera defaults
+     * Requirements: 14.8
+     */
+    private void initializeVisualOdometry() {
+        try {
+            visualOdometryProcessor = new VisualOdometryProcessor();
+            
+            // Set Samsung S9 camera defaults (approximate values)
+            // Samsung S9 main camera specifications:
+            // - Sensor: Sony IMX345 (1/2.55" sensor)
+            // - Focal length: 26mm equivalent (4.25mm actual)
+            // - Resolution: 4032x3024 (12MP), but camera preview typically uses 1920x1080 or 1280x720
+            // - Pixel size: ~1.4μm
+            
+            // Create default camera matrix for Samsung S9 at 1280x720 resolution
+            Mat defaultCameraMatrix = Mat.eye(3, 3, org.opencv.core.CvType.CV_64F);
+            
+            // Focal length calculation: f_pixels = f_mm * sensor_width_pixels / sensor_width_mm
+            // For Samsung S9: f_pixels ≈ 4.25 * 1280 / 5.76 ≈ 945 pixels (horizontal)
+            double focalLengthX = 945.0;  // Horizontal focal length in pixels
+            double focalLengthY = 945.0;  // Vertical focal length in pixels (assuming square pixels)
+            double principalPointX = 640.0;  // Image center X (1280/2)
+            double principalPointY = 360.0;  // Image center Y (720/2)
+            
+            // Set camera matrix values
+            defaultCameraMatrix.put(0, 0, focalLengthX);  // fx
+            defaultCameraMatrix.put(1, 1, focalLengthY);  // fy
+            defaultCameraMatrix.put(0, 2, principalPointX);  // cx
+            defaultCameraMatrix.put(1, 2, principalPointY);  // cy
+            
+            // Create default distortion coefficients (minimal distortion for Samsung S9)
+            Mat defaultDistCoeffs = Mat.zeros(5, 1, org.opencv.core.CvType.CV_64F);
+            // Samsung S9 has good lens quality, so minimal distortion
+            defaultDistCoeffs.put(0, 0, -0.1);   // k1 (radial distortion)
+            defaultDistCoeffs.put(1, 0, 0.05);   // k2 (radial distortion)
+            defaultDistCoeffs.put(2, 0, 0.0);    // p1 (tangential distortion)
+            defaultDistCoeffs.put(3, 0, 0.0);    // p2 (tangential distortion)
+            defaultDistCoeffs.put(4, 0, 0.0);    // k3 (radial distortion)
+            
+            // Set camera intrinsics
+            visualOdometryProcessor.setCameraIntrinsics(defaultCameraMatrix, defaultDistCoeffs);
+            
+            // Set checkerboard pattern for calibration (standard 9x6 pattern)
+            visualOdometryProcessor.setCheckerboardPattern(new org.opencv.core.Size(9, 6), 25.0f);
+            
+            // Set distance callback
+            visualOdometryProcessor.setDistanceCallback(new VisualOdometryProcessor.DistanceCallback() {
+                @Override
+                public void onDistanceComputed(@NonNull VisualOdometryProcessor.DistanceResult result) {
+                    Log.d(TAG, "Visual odometry distance: " + result.toString());
+                    
+                    // Notify callback if available
+                    if (callback != null && callback instanceof VisualOdometryCallback) {
+                        ((VisualOdometryCallback) callback).onDistanceComputed(result);
+                    }
+                }
+                
+                @Override
+                public void onInsufficientFeatures(int matchCount) {
+                    Log.w(TAG, "Insufficient features for visual odometry: " + matchCount);
+                    
+                    if (callback != null && callback instanceof VisualOdometryCallback) {
+                        ((VisualOdometryCallback) callback).onInsufficientFeatures(matchCount);
+                    }
+                }
+                
+                @Override
+                public void onProcessingError(@NonNull Exception error) {
+                    Log.e(TAG, "Visual odometry processing error", error);
+                    
+                    if (callback != null && callback instanceof VisualOdometryCallback) {
+                        ((VisualOdometryCallback) callback).onVisualOdometryError(error);
+                    }
+                }
+            });
+            
+            Log.d(TAG, "Visual odometry processor initialized with Samsung S9 defaults");
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to initialize visual odometry processor", e);
+            visualOdometryProcessor = null;
+        }
+    }
+    
+    /**
+     * Apply visual odometry processing to compute 3D distance
+     * Requirements: 14.1, 14.2, 14.5
+     */
+    private Mat applyVisualOdometry(@NonNull Mat inputFrame) {
+        try {
+            if (visualOdometryProcessor == null) {
+                Log.w(TAG, "Visual odometry processor not initialized");
+                return inputFrame;
+            }
+            
+            // Convert to grayscale for feature detection
+            Mat grayFrame = convertToGrayscale(inputFrame);
+            
+            // Process frame pair if we have a previous frame
+            if (previousFrame != null && !previousFrame.empty()) {
+                visualOdometryProcessor.processFramePair(previousFrame, grayFrame);
+            }
+            
+            // Store current frame as previous for next iteration
+            if (previousFrame != null) {
+                previousFrame.release();
+            }
+            previousFrame = grayFrame.clone();
+            
+            // Clean up temporary grayscale frame if it's different from input
+            if (grayFrame != inputFrame) {
+                grayFrame.release();
+            }
+            
+            // Return original frame for display (visual odometry works in background)
+            return inputFrame;
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error in visual odometry processing", e);
+            return inputFrame;
+        }
+    }
+    
+    /**
+     * Enable or disable visual odometry processing
+     */
+    public void setVisualOdometryEnabled(boolean enabled) {
+        isVisualOdometryEnabled = enabled;
+        
+        if (enabled && visualOdometryProcessor == null) {
+            initializeVisualOdometry();
+        }
+        
+        Log.d(TAG, "Visual odometry " + (enabled ? "enabled" : "disabled"));
+    }
+    
+    /**
+     * Check if visual odometry is enabled
+     */
+    public boolean isVisualOdometryEnabled() {
+        return isVisualOdometryEnabled && visualOdometryProcessor != null;
+    }
+    
+    /**
+     * Get visual odometry processor for direct access
+     */
+    public VisualOdometryProcessor getVisualOdometryProcessor() {
+        return visualOdometryProcessor;
+    }
+    
+    /**
+     * Perform camera calibration using collected images
+     * Requirements: 14.8
+     */
+    public VisualOdometryProcessor.CalibrationResult performCameraCalibration() {
+        if (visualOdometryProcessor == null) {
+            Log.w(TAG, "Visual odometry processor not initialized");
+            return new VisualOdometryProcessor.CalibrationResult(
+                new Mat(), new Mat(), Double.MAX_VALUE, 0, null, false);
+        }
+        
+        return visualOdometryProcessor.performCameraCalibration();
+    }
+    
+    /**
+     * Add calibration image for camera calibration
+     * Requirements: 14.8
+     */
+    public boolean addCalibrationImage(@NonNull Mat image) {
+        if (visualOdometryProcessor == null) {
+            Log.w(TAG, "Visual odometry processor not initialized");
+            return false;
+        }
+        
+        return visualOdometryProcessor.addCalibrationImage(image);
+    }
+    
+    /**
+     * Save calibration results to file
+     * Requirements: 14.8
+     */
+    public boolean saveCalibrationToFile(@NonNull String filePath, 
+                                       @NonNull VisualOdometryProcessor.CalibrationResult result) {
+        if (visualOdometryProcessor == null) {
+            Log.w(TAG, "Visual odometry processor not initialized");
+            return false;
+        }
+        
+        return visualOdometryProcessor.saveCalibrationToFile(filePath, result);
+    }
+    
+    /**
+     * Load calibration results from file
+     * Requirements: 14.8
+     */
+    public VisualOdometryProcessor.CalibrationResult loadCalibrationFromFile(@NonNull String filePath) {
+        if (visualOdometryProcessor == null) {
+            initializeVisualOdometry();
+        }
+        
+        if (visualOdometryProcessor == null) {
+            Log.w(TAG, "Visual odometry processor not initialized");
+            return new VisualOdometryProcessor.CalibrationResult(
+                new Mat(), new Mat(), Double.MAX_VALUE, 0, null, false);
+        }
+        
+        return visualOdometryProcessor.loadCalibrationFromFile(filePath);
+    }
+    
+    /**
+     * Extended callback interface for visual odometry
+     */
+    public interface VisualOdometryCallback extends ProcessingCallback {
+        void onDistanceComputed(@NonNull VisualOdometryProcessor.DistanceResult result);
+        void onInsufficientFeatures(int matchCount);
+        void onVisualOdometryError(@NonNull Exception error);
+    }
+    
+    /**
      * Release resources
      * Requirement 5.4: Properly release resources when backgrounded
      */
     public void release() {
         Log.d(TAG, "Releasing OpenCV processor resources");
+        
+        // Release visual odometry resources
+        if (visualOdometryProcessor != null) {
+            visualOdometryProcessor.release();
+            visualOdometryProcessor = null;
+        }
+        
+        if (previousFrame != null) {
+            previousFrame.release();
+            previousFrame = null;
+        }
         
         isInitialized = false;
         callback = null;

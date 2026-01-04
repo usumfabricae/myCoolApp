@@ -25,13 +25,35 @@
         <item>LAB Color</item>
         <item>Blur</item>
         <item>Sharpen</item>
+        <item>Visual Odometry</item>
     </string-array>
     
     <!-- Accessibility strings -->
     <string name="camera_preview_description">Camera preview showing real-time video feed with OpenCV processing</string>
     <string name="toggle_camera_description">Toggle button to show or hide camera preview. Camera processing continues in background when hidden.</string>
     <string name="rotate_camera_description">Rotate camera display by 90 degrees clockwise. Cycles through 0, 90, 180, and 270 degrees.</string>
-    <string name="processing_mode_description">Select image processing mode. Options include passthrough, grayscale, edge detection, color spaces, blur, and sharpen.</string>
+    <string name="processing_mode_description">Select image processing mode. Options include passthrough, grayscale, edge detection, color spaces, blur, sharpen, and visual odometry.</string>
     <string name="performance_toggle_description">Toggle performance metrics overlay showing FPS, processing time, memory usage, and frame drops</string>
     <string name="performance_overlay_description">Performance metrics overlay</string>
+    
+    <!-- Visual Odometry strings -->
+    <string name="visual_odometry_enabled">Visual Odometry: Distance tracking enabled</string>
+    <string name="visual_odometry_disabled">Visual Odometry: Distance tracking disabled</string>
+    <string name="visual_odometry_insufficient_features">Insufficient features for distance tracking</string>
+    <string name="visual_odometry_error">Visual odometry processing error</string>
+    <string name="calibration_mode_enabled">Camera calibration mode enabled</string>
+    <string name="calibration_mode_disabled">Camera calibration mode disabled</string>
+    <string name="calibration_image_added">Calibration image added (%d/%d)</string>
+    <string name="calibration_image_rejected">Checkerboard not found in image</string>
+    <string name="calibration_completed">Camera calibration completed (RMS error: %.3f)</string>
+    <string name="calibration_failed">Camera calibration failed</string>
+    <string name="calibration_saved">Calibration saved to file</string>
+    <string name="calibration_loaded">Calibration loaded from file</string>
+    <string name="start_calibration">Start Calibration</string>
+    <string name="stop_calibration">Stop Calibration</string>
+    <string name="perform_calibration">Perform Calibration</string>
+    <string name="save_calibration">Save Calibration</string>
+    <string name="load_calibration">Load Calibration</string>
+    <string name="clear_calibration">Clear Images</string>
+    <string name="distance_display">Distance: X=%.2fcm Y=%.2fcm Z=%.2fcm</string>
 </resources>

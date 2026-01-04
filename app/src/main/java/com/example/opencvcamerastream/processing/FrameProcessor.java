@@ -45,6 +45,12 @@ public class FrameProcessor {
     private final CopyOperationTracker copyTracker;
     private volatile boolean useZeroCopyPath = true; // Enable zero-copy by default
     
+    // Visual odometry components (Task 30)
+    private final VisualOdometryProcessor visualOdometryProcessor;
+    private Mat previousFrameMat = null; // Previous frame reference for visual odometry
+    private volatile boolean useVisualOdometry = false; // Enable visual odometry processing
+    private VisualOdometryCallback visualOdometryCallback;
+    
     // Threading and queue management
     private HandlerThread processingThread;
     private Handler processingHandler;
@@ -61,6 +67,33 @@ public class FrameProcessor {
     
     // Visualization state tracking
     private final AtomicBoolean isVisualizationEnabled = new AtomicBoolean(true);
+    
+    /**
+     * Callback interface for visual odometry results
+     * Requirements: 14.6
+     */
+    public interface VisualOdometryCallback {
+        /**
+         * Called when visual odometry distance computation is complete
+         * 
+         * @param result The distance computation result
+         */
+        void onDistanceComputed(@NonNull VisualOdometryProcessor.DistanceResult result);
+        
+        /**
+         * Called when insufficient features are detected for reliable computation
+         * 
+         * @param matchCount Number of feature matches found
+         */
+        void onInsufficientFeatures(int matchCount);
+        
+        /**
+         * Called when visual odometry processing fails
+         * 
+         * @param error The error that occurred
+         */
+        void onVisualOdometryError(@NonNull Exception error);
+    }
     
     /**
      * Callback interface for processed frames
@@ -131,7 +164,10 @@ public class FrameProcessor {
         this.zeroCopyProcessor = new ZeroCopyProcessor(openCVProcessor);
         this.copyTracker = new CopyOperationTracker();
         
-        Log.d(TAG, "FrameProcessor created with FrameBuffer and zero-copy optimization");
+        // Initialize visual odometry processor (Task 30)
+        this.visualOdometryProcessor = new VisualOdometryProcessor();
+        
+        Log.d(TAG, "FrameProcessor created with FrameBuffer, zero-copy optimization, and visual odometry");
     }
     
     /**
@@ -147,7 +183,10 @@ public class FrameProcessor {
         this.zeroCopyProcessor = new ZeroCopyProcessor(openCVProcessor);
         this.copyTracker = new CopyOperationTracker();
         
-        Log.d(TAG, "FrameProcessor created with custom FrameBuffer and zero-copy optimization");
+        // Initialize visual odometry processor (Task 30)
+        this.visualOdometryProcessor = new VisualOdometryProcessor();
+        
+        Log.d(TAG, "FrameProcessor created with custom FrameBuffer, zero-copy optimization, and visual odometry");
     }
     
     /**
@@ -156,6 +195,15 @@ public class FrameProcessor {
      */
     public void setProcessingCallback(@Nullable ProcessingCallback callback) {
         this.processingCallback = callback;
+    }
+    
+    /**
+     * Set the visual odometry callback
+     * Requirements: 14.6
+     * @param callback Callback for visual odometry events
+     */
+    public void setVisualOdometryCallback(@Nullable VisualOdometryCallback callback) {
+        this.visualOdometryCallback = callback;
     }
     
     /**
@@ -234,6 +282,15 @@ public class FrameProcessor {
         
         // Release zero-copy processor (Task 24)
         zeroCopyProcessor.release();
+        
+        // Release visual odometry processor (Task 30)
+        visualOdometryProcessor.release();
+        
+        // Release previous frame reference
+        if (previousFrameMat != null) {
+            previousFrameMat.release();
+            previousFrameMat = null;
+        }
         
         // Log final performance metrics
         logPerformanceMetrics(true);
@@ -353,6 +410,7 @@ public class FrameProcessor {
     
     /**
      * Process frame using zero-copy optimization (Task 24)
+     * Enhanced with visual odometry integration (Task 30)
      */
     private void processFrameZeroCopy(@NonNull Image image, long startTime) {
         zeroCopyProcessor.processFrameZeroCopy(image, new ZeroCopyProcessor.ZeroCopyCallback() {
@@ -371,6 +429,9 @@ public class FrameProcessor {
                         metrics.matToBitmapTimeMs, 0);
                 
                 Log.v(TAG, "Zero-copy frame processed successfully in " + processingTime + "ms: " + metrics);
+                
+                // Process visual odometry if enabled (Task 30)
+                processVisualOdometryIfEnabled(processedMat);
                 
                 // Convert to legacy callback format for compatibility
                 if (processingCallback != null) {
@@ -407,6 +468,7 @@ public class FrameProcessor {
     
     /**
      * Process frame using legacy path (fallback)
+     * Enhanced with visual odometry integration (Task 30)
      */
     private void processFrameLegacy(@NonNull Image image, long startTime) {
         Mat inputMat = null;
@@ -452,6 +514,9 @@ public class FrameProcessor {
             
             Log.v(TAG, "Legacy frame processed successfully in " + processingTime + "ms");
             
+            // Process visual odometry if enabled (Task 30)
+            processVisualOdometryIfEnabled(processedMat);
+            
             // Notify callback with processed frame
             // OPTIMIZED (Task 21): Ownership transfer pattern - no clone needed
             // Callback is now responsible for releasing the Mat when done
@@ -476,6 +541,128 @@ public class FrameProcessor {
         }
     }
     
+
+    /**
+     * Process visual odometry if enabled (Task 30)
+     * Requirements: 14.1, 14.2
+     * 
+     * This method implements frame pair processing using OpenCV's built-in functions
+     * while maintaining compatibility with existing zero-copy optimization.
+     * 
+     * @param currentFrameMat The current processed frame Mat
+     */
+    private void processVisualOdometryIfEnabled(@NonNull Mat currentFrameMat) {
+        if (!useVisualOdometry || visualOdometryCallback == null) {
+            // Update previous frame reference for next iteration
+            updatePreviousFrameReference(currentFrameMat);
+            return;
+        }
+        
+        try {
+            if (previousFrameMat != null && !previousFrameMat.empty()) {
+                // Use OpenCV's efficient Mat copying and memory management
+                // Create working copies to avoid modifying the original frames
+                Mat previousFrameCopy = previousFrameMat.clone();
+                Mat currentFrameCopy = currentFrameMat.clone();
+                
+                // Set up visual odometry callback to handle results
+                visualOdometryProcessor.setDistanceCallback(new VisualOdometryProcessor.DistanceCallback() {
+                    @Override
+                    public void onDistanceComputed(@NonNull VisualOdometryProcessor.DistanceResult result) {
+                        Log.d(TAG, "Visual odometry distance computed: " + result);
+                        if (visualOdometryCallback != null) {
+                            visualOdometryCallback.onDistanceComputed(result);
+                        }
+                        
+                        // Clean up working copies
+                        previousFrameCopy.release();
+                        currentFrameCopy.release();
+                    }
+                    
+                    @Override
+                    public void onInsufficientFeatures(int matchCount) {
+                        Log.w(TAG, "Visual odometry: insufficient features (" + matchCount + ")");
+                        if (visualOdometryCallback != null) {
+                            visualOdometryCallback.onInsufficientFeatures(matchCount);
+                        }
+                        
+                        // Clean up working copies
+                        previousFrameCopy.release();
+                        currentFrameCopy.release();
+                    }
+                    
+                    @Override
+                    public void onProcessingError(@NonNull Exception error) {
+                        Log.e(TAG, "Visual odometry processing error", error);
+                        if (visualOdometryCallback != null) {
+                            visualOdometryCallback.onVisualOdometryError(error);
+                        }
+                        
+                        // Clean up working copies
+                        previousFrameCopy.release();
+                        currentFrameCopy.release();
+                    }
+                });
+                
+                // Process frame pair using OpenCV's built-in functions
+                // This implements frame pair processing as required by Task 30
+                visualOdometryProcessor.processFramePair(previousFrameCopy, currentFrameCopy);
+                
+            } else {
+                Log.v(TAG, "Visual odometry: no previous frame available, skipping");
+            }
+            
+            // Update previous frame reference for next iteration
+            updatePreviousFrameReference(currentFrameMat);
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error in visual odometry processing", e);
+            if (visualOdometryCallback != null) {
+                visualOdometryCallback.onVisualOdometryError(e);
+            }
+            
+            // Still update previous frame reference to continue processing
+            updatePreviousFrameReference(currentFrameMat);
+        }
+    }
+    
+    /**
+     * Update previous frame reference using OpenCV's efficient Mat copying
+     * Requirements: 14.1, 14.2
+     * 
+     * This method maintains the cv::Mat previous frame reference as required by Task 30
+     * while using OpenCV's efficient memory management.
+     * 
+     * @param currentFrameMat The current frame to store as previous frame
+     */
+    private void updatePreviousFrameReference(@NonNull Mat currentFrameMat) {
+        try {
+            // Release previous frame if it exists
+            if (previousFrameMat != null) {
+                previousFrameMat.release();
+            }
+            
+            // Use OpenCV's efficient Mat copying - clone to maintain independent reference
+            // This ensures compatibility with existing zero-copy optimization
+            if (!currentFrameMat.empty()) {
+                previousFrameMat = currentFrameMat.clone();
+                Log.v(TAG, "Previous frame reference updated: " + 
+                          previousFrameMat.rows() + "x" + previousFrameMat.cols() + 
+                          " channels=" + previousFrameMat.channels());
+            } else {
+                previousFrameMat = null;
+                Log.w(TAG, "Current frame is empty, clearing previous frame reference");
+            }
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error updating previous frame reference", e);
+            // Ensure previousFrameMat is in a clean state
+            if (previousFrameMat != null) {
+                previousFrameMat.release();
+                previousFrameMat = null;
+            }
+        }
+    }
 
     
     /**
@@ -631,6 +818,60 @@ public class FrameProcessor {
     }
     
     /**
+     * Enable or disable visual odometry processing (Task 30)
+     * Requirements: 14.1, 14.2
+     * 
+     * @param enabled true to enable visual odometry, false to disable
+     */
+    public void setVisualOdometryEnabled(boolean enabled) {
+        useVisualOdometry = enabled;
+        Log.d(TAG, "Visual odometry " + (enabled ? "enabled" : "disabled"));
+        
+        // Clear previous frame reference when disabling to free memory
+        if (!enabled && previousFrameMat != null) {
+            previousFrameMat.release();
+            previousFrameMat = null;
+            Log.d(TAG, "Previous frame reference cleared");
+        }
+    }
+    
+    /**
+     * Check if visual odometry processing is enabled
+     * Requirements: 14.1, 14.2
+     * 
+     * @return true if visual odometry is enabled, false otherwise
+     */
+    public boolean isVisualOdometryEnabled() {
+        return useVisualOdometry;
+    }
+    
+    /**
+     * Set camera intrinsic parameters for visual odometry
+     * Requirements: 14.8
+     * 
+     * @param cameraMatrix 3x3 camera matrix containing focal lengths and principal point
+     * @param distCoeffs Distortion coefficients (can be null if no distortion correction needed)
+     */
+    public void setCameraIntrinsics(@NonNull Mat cameraMatrix, @Nullable Mat distCoeffs) {
+        visualOdometryProcessor.setCameraIntrinsics(cameraMatrix, distCoeffs);
+        Log.d(TAG, "Camera intrinsics set for visual odometry");
+    }
+    
+    /**
+     * Get visual odometry performance metrics
+     * Requirements: 14.1, 14.2
+     * 
+     * @return Performance metrics including processing time and frame pair count
+     */
+    public VisualOdometryPerformanceMetrics getVisualOdometryMetrics() {
+        return new VisualOdometryPerformanceMetrics(
+            visualOdometryProcessor.getTotalFramePairs(),
+            visualOdometryProcessor.getAverageProcessingTime(),
+            previousFrameMat != null
+        );
+    }
+    
+    /**
      * Performance statistics class
      */
     public static class ProcessingStats {
@@ -652,6 +893,28 @@ public class FrameProcessor {
         
         public double getProcessingRate() {
             return framesReceived > 0 ? (framesProcessed * 100.0 / framesReceived) : 0;
+        }
+    }
+    
+    /**
+     * Visual odometry performance metrics class (Task 30)
+     * Requirements: 14.1, 14.2
+     */
+    public static class VisualOdometryPerformanceMetrics {
+        public final int totalFramePairs;
+        public final double averageProcessingTimeMs;
+        public final boolean hasPreviousFrame;
+        
+        public VisualOdometryPerformanceMetrics(int framePairs, double avgTime, boolean hasPrevious) {
+            this.totalFramePairs = framePairs;
+            this.averageProcessingTimeMs = avgTime;
+            this.hasPreviousFrame = hasPrevious;
+        }
+        
+        @Override
+        public String toString() {
+            return String.format("VisualOdometryMetrics{pairs=%d, avgTime=%.2fms, hasPrevious=%b}",
+                    totalFramePairs, averageProcessingTimeMs, hasPreviousFrame);
         }
     }
 }

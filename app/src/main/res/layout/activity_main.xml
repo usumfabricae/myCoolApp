@@ -105,6 +105,117 @@
 
     </LinearLayout>
 
+    <!-- Visual Odometry Controls Panel -->
+    <LinearLayout
+        android:id="@+id/visualOdometryControlPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:padding="8dp"
+        android:background="@color/control_panel_background"
+        android:visibility="gone"
+        app:layout_constraintBottom_toTopOf="@+id/controlPanel"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <Button
+            android:id="@+id/btnStartCalibration"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/start_calibration"
+            android:textSize="10sp"
+            android:padding="4dp"
+            android:layout_margin="2dp"
+            android:background="@drawable/button_background" />
+
+        <Button
+            android:id="@+id/btnStopCalibration"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/stop_calibration"
+            android:textSize="10sp"
+            android:padding="4dp"
+            android:layout_margin="2dp"
+            android:background="@drawable/button_background" />
+
+        <Button
+            android:id="@+id/btnPerformCalibration"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/perform_calibration"
+            android:textSize="10sp"
+            android:padding="4dp"
+            android:layout_margin="2dp"
+            android:background="@drawable/button_background" />
+
+        <Button
+            android:id="@+id/btnSaveCalibration"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/save_calibration"
+            android:textSize="10sp"
+            android:padding="4dp"
+            android:layout_margin="2dp"
+            android:background="@drawable/button_background" />
+
+        <Button
+            android:id="@+id/btnLoadCalibration"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/load_calibration"
+            android:textSize="10sp"
+            android:padding="4dp"
+            android:layout_margin="2dp"
+            android:background="@drawable/button_background" />
+
+        <Button
+            android:id="@+id/btnClearCalibration"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/clear_calibration"
+            android:textSize="10sp"
+            android:padding="4dp"
+            android:layout_margin="2dp"
+            android:background="@drawable/button_background" />
+
+    </LinearLayout>
+
+    <!-- Visual Odometry Status and Distance Display -->
+    <LinearLayout
+        android:id="@+id/visualOdometryStatusPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="8dp"
+        android:background="#80000000"
+        android:visibility="gone"
+        app:layout_constraintBottom_toTopOf="@+id/visualOdometryControlPanel"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <TextView
+            android:id="@+id/txtCalibrationStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Calibration: Ready"
+            android:textColor="@android:color/white"
+            android:textSize="12sp"
+            android:gravity="center" />
+
+        <TextView
+            android:id="@+id/txtDistanceDisplay"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Distance: --"
+            android:textColor="@android:color/white"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:layout_marginTop="4dp" />
+
+    </LinearLayout>
+
     <!-- Control Panel with Camera Visualization Toggle and Rotation Button -->
     <LinearLayout
         android:id="@+id/controlPanel"

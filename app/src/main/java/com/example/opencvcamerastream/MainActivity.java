@@ -62,6 +62,19 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
     private boolean isVisualizationEnabled = true;
     private int currentRotation = 0; // 0, 90, 180, 270
     
+    // Visual odometry UI controls
+    private android.widget.LinearLayout visualOdometryControlPanel;
+    private Button btnStartCalibration;
+    private Button btnStopCalibration;
+    private Button btnPerformCalibration;
+    private Button btnSaveCalibration;
+    private Button btnLoadCalibration;
+    private Button btnClearCalibration;
+    private android.widget.TextView txtCalibrationStatus;
+    private android.widget.TextView txtDistanceDisplay;
+    private boolean isCalibrationMode = false;
+    private int calibrationImageCount = 0;
+    
     // Additional components referenced in the code
     private com.example.opencvcamerastream.processing.FrameProcessor frameProcessor;
     private com.example.opencvcamerastream.display.DisplayManager displayManager;
@@ -406,6 +419,66 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             }
         });
         
+        // Set up visual odometry callback for OpenCV processor
+        openCVProcessor.setProcessingCallback(new OpenCVProcessor.VisualOdometryCallback() {
+            @Override
+            public void onFrameProcessed(@NonNull org.opencv.core.Mat processedFrame, long processingTimeMs) {
+                // This is handled by FrameProcessor callback above
+            }
+            
+            @Override
+            public void onProcessingError(@NonNull Exception error, @androidx.annotation.Nullable org.opencv.core.Mat originalFrame) {
+                // This is handled by FrameProcessor callback above
+            }
+            
+            @Override
+            public void onProcessingTimeout(@NonNull org.opencv.core.Mat originalFrame, long timeoutMs) {
+                // This is handled by FrameProcessor callback above
+            }
+            
+            @Override
+            public void onDistanceComputed(@NonNull VisualOdometryProcessor.DistanceResult result) {
+                Log.d(TAG, "Distance computed: " + result.toString());
+                
+                // Update distance display on UI thread
+                runOnUiThread(() -> {
+                    if (txtDistanceDisplay != null && result.isValid) {
+                        String distanceText = String.format(getString(R.string.distance_display),
+                                result.translation.x * 100,  // Convert to cm
+                                result.translation.y * 100,  // Convert to cm
+                                result.translation.z * 100); // Convert to cm
+                        txtDistanceDisplay.setText(distanceText);
+                        txtDistanceDisplay.setVisibility(android.view.View.VISIBLE);
+                    }
+                });
+            }
+            
+            @Override
+            public void onInsufficientFeatures(int matchCount) {
+                Log.w(TAG, "Insufficient features: " + matchCount);
+                
+                runOnUiThread(() -> {
+                    if (txtDistanceDisplay != null) {
+                        txtDistanceDisplay.setText(getString(R.string.visual_odometry_insufficient_features));
+                        txtDistanceDisplay.setVisibility(android.view.View.VISIBLE);
+                    }
+                });
+            }
+            
+            @Override
+            public void onVisualOdometryError(@NonNull Exception error) {
+                Log.e(TAG, "Visual odometry error", error);
+                
+                runOnUiThread(() -> {
+                    if (txtDistanceDisplay != null) {
+                        txtDistanceDisplay.setText(getString(R.string.visual_odometry_error));
+                        txtDistanceDisplay.setVisibility(android.view.View.VISIBLE);
+                    }
+                    Toast.makeText(MainActivity.this, getString(R.string.visual_odometry_error), Toast.LENGTH_SHORT).show();
+                });
+            }
+        });
+        
         Log.d(TAG, "OpenCV processor created, waiting for OpenCV library initialization");
     }
     
@@ -533,6 +606,19 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             public void onFrameAvailable(@androidx.annotation.NonNull android.media.Image frame) {
                 // Process frame with OpenCV if initialized
                 if (isOpenCVInitialized && openCVProcessor != null && frameProcessor != null) {
+                    // Try to add calibration image if in calibration mode
+                    if (isCalibrationMode) {
+                        try {
+                            // Convert Image to Mat for calibration
+                            org.opencv.core.Mat frameMat = com.example.opencvcamerastream.processing.OpenCVProcessor.imageToMat(frame);
+                            tryAddCalibrationImage(frameMat);
+                            frameMat.release();
+                        } catch (Exception e) {
+                            Log.e(TAG, "Error processing calibration image", e);
+                        }
+                    }
+                    
+                    // Continue with normal frame processing
                     frameProcessor.processFrameAsync(frame);
                 } else {
                     Log.v(TAG, "Frame available but processing pipeline not ready, closing frame");
@@ -763,6 +849,330 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
     }
     
     /**
+     * Show or hide visual odometry controls
+     * Requirements: 14.6, 14.8
+     */
+    private void showVisualOdometryControls(boolean show) {
+        // Initialize visual odometry controls if not already done
+        if (visualOdometryControlPanel == null) {
+            initializeVisualOdometryControls();
+        }
+        
+        if (visualOdometryControlPanel != null) {
+            visualOdometryControlPanel.setVisibility(show ? android.view.View.VISIBLE : android.view.View.GONE);
+        }
+        
+        // Also show/hide the status panel
+        android.widget.LinearLayout statusPanel = findViewById(R.id.visualOdometryStatusPanel);
+        if (statusPanel != null) {
+            statusPanel.setVisibility(show ? android.view.View.VISIBLE : android.view.View.GONE);
+        }
+        
+        Log.d(TAG, "Visual odometry controls " + (show ? "shown" : "hidden"));
+    }
+    
+    /**
+     * Initialize visual odometry control panel
+     * Requirements: 14.6, 14.8
+     */
+    private void initializeVisualOdometryControls() {
+        try {
+            // Get references to layout-defined controls
+            visualOdometryControlPanel = findViewById(R.id.visualOdometryControlPanel);
+            android.widget.LinearLayout statusPanel = findViewById(R.id.visualOdometryStatusPanel);
+            
+            // Get calibration buttons
+            btnStartCalibration = findViewById(R.id.btnStartCalibration);
+            btnStopCalibration = findViewById(R.id.btnStopCalibration);
+            btnPerformCalibration = findViewById(R.id.btnPerformCalibration);
+            btnSaveCalibration = findViewById(R.id.btnSaveCalibration);
+            btnLoadCalibration = findViewById(R.id.btnLoadCalibration);
+            btnClearCalibration = findViewById(R.id.btnClearCalibration);
+            
+            // Get status and distance display
+            txtCalibrationStatus = findViewById(R.id.txtCalibrationStatus);
+            txtDistanceDisplay = findViewById(R.id.txtDistanceDisplay);
+            
+            // Set up button listeners
+            if (btnStartCalibration != null) {
+                btnStartCalibration.setOnClickListener(v -> onStartCalibration());
+            }
+            if (btnStopCalibration != null) {
+                btnStopCalibration.setOnClickListener(v -> onStopCalibration());
+            }
+            if (btnPerformCalibration != null) {
+                btnPerformCalibration.setOnClickListener(v -> onPerformCalibration());
+            }
+            if (btnSaveCalibration != null) {
+                btnSaveCalibration.setOnClickListener(v -> onSaveCalibration());
+            }
+            if (btnLoadCalibration != null) {
+                btnLoadCalibration.setOnClickListener(v -> onLoadCalibration());
+            }
+            if (btnClearCalibration != null) {
+                btnClearCalibration.setOnClickListener(v -> onClearCalibration());
+            }
+            
+            // Set initial button states
+            updateCalibrationButtonStates();
+            
+            Log.d(TAG, "Visual odometry controls initialized");
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to initialize visual odometry controls", e);
+        }
+    }
+    
+    /**
+     * Start camera calibration mode
+     * Requirements: 14.8
+     */
+    private void onStartCalibration() {
+        isCalibrationMode = true;
+        calibrationImageCount = 0;
+        
+        if (openCVProcessor != null && openCVProcessor.getVisualOdometryProcessor() != null) {
+            openCVProcessor.getVisualOdometryProcessor().clearCalibrationImages();
+        }
+        
+        updateCalibrationButtonStates();
+        updateCalibrationStatus("Calibration started - Show checkerboard to camera");
+        
+        Toast.makeText(this, getString(R.string.calibration_mode_enabled), Toast.LENGTH_SHORT).show();
+        Log.d(TAG, "Camera calibration mode started");
+    }
+    
+    /**
+     * Stop camera calibration mode
+     * Requirements: 14.8
+     */
+    private void onStopCalibration() {
+        isCalibrationMode = false;
+        
+        updateCalibrationButtonStates();
+        updateCalibrationStatus("Calibration stopped - " + calibrationImageCount + " images collected");
+        
+        Toast.makeText(this, getString(R.string.calibration_mode_disabled), Toast.LENGTH_SHORT).show();
+        Log.d(TAG, "Camera calibration mode stopped");
+    }
+    
+    /**
+     * Perform camera calibration using collected images
+     * Requirements: 14.8
+     */
+    private void onPerformCalibration() {
+        if (openCVProcessor == null) {
+            Toast.makeText(this, "OpenCV processor not initialized", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        // Perform calibration in background thread
+        new Thread(() -> {
+            try {
+                VisualOdometryProcessor.CalibrationResult result = openCVProcessor.performCameraCalibration();
+                
+                runOnUiThread(() -> {
+                    if (result.isValid) {
+                        String message = String.format(getString(R.string.calibration_completed), result.reprojectionError);
+                        updateCalibrationStatus(message);
+                        Toast.makeText(MainActivity.this, message, Toast.LENGTH_LONG).show();
+                        Log.i(TAG, "Camera calibration completed: " + result.toString());
+                    } else {
+                        updateCalibrationStatus(getString(R.string.calibration_failed));
+                        Toast.makeText(MainActivity.this, getString(R.string.calibration_failed), Toast.LENGTH_LONG).show();
+                        Log.w(TAG, "Camera calibration failed");
+                    }
+                    
+                    updateCalibrationButtonStates();
+                });
+                
+            } catch (Exception e) {
+                Log.e(TAG, "Error performing calibration", e);
+                runOnUiThread(() -> {
+                    updateCalibrationStatus("Calibration error: " + e.getMessage());
+                    Toast.makeText(MainActivity.this, "Calibration error", Toast.LENGTH_SHORT).show();
+                });
+            }
+        }).start();
+    }
+    
+    /**
+     * Save calibration results to file
+     * Requirements: 14.8
+     */
+    private void onSaveCalibration() {
+        if (openCVProcessor == null) {
+            Toast.makeText(this, "OpenCV processor not initialized", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        // Save calibration in background thread
+        new Thread(() -> {
+            try {
+                // First perform calibration to get current results
+                VisualOdometryProcessor.CalibrationResult result = openCVProcessor.performCameraCalibration();
+                
+                if (result.isValid) {
+                    String filePath = getFilesDir().getAbsolutePath() + "/camera_calibration.yaml";
+                    boolean saved = openCVProcessor.saveCalibrationToFile(filePath, result);
+                    
+                    runOnUiThread(() -> {
+                        if (saved) {
+                            updateCalibrationStatus("Calibration saved to file");
+                            Toast.makeText(MainActivity.this, getString(R.string.calibration_saved), Toast.LENGTH_SHORT).show();
+                            Log.i(TAG, "Calibration saved to: " + filePath);
+                        } else {
+                            updateCalibrationStatus("Failed to save calibration");
+                            Toast.makeText(MainActivity.this, "Failed to save calibration", Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                } else {
+                    runOnUiThread(() -> {
+                        updateCalibrationStatus("No valid calibration to save");
+                        Toast.makeText(MainActivity.this, "No valid calibration to save", Toast.LENGTH_SHORT).show();
+                    });
+                }
+                
+            } catch (Exception e) {
+                Log.e(TAG, "Error saving calibration", e);
+                runOnUiThread(() -> {
+                    updateCalibrationStatus("Save error: " + e.getMessage());
+                    Toast.makeText(MainActivity.this, "Save error", Toast.LENGTH_SHORT).show();
+                });
+            }
+        }).start();
+    }
+    
+    /**
+     * Load calibration results from file
+     * Requirements: 14.8
+     */
+    private void onLoadCalibration() {
+        if (openCVProcessor == null) {
+            Toast.makeText(this, "OpenCV processor not initialized", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        // Load calibration in background thread
+        new Thread(() -> {
+            try {
+                String filePath = getFilesDir().getAbsolutePath() + "/camera_calibration.yaml";
+                VisualOdometryProcessor.CalibrationResult result = openCVProcessor.loadCalibrationFromFile(filePath);
+                
+                runOnUiThread(() -> {
+                    if (result.isValid) {
+                        String message = "Calibration loaded (RMS: " + String.format("%.3f", result.reprojectionError) + ")";
+                        updateCalibrationStatus(message);
+                        Toast.makeText(MainActivity.this, getString(R.string.calibration_loaded), Toast.LENGTH_SHORT).show();
+                        Log.i(TAG, "Calibration loaded from: " + filePath);
+                    } else {
+                        updateCalibrationStatus("Failed to load calibration");
+                        Toast.makeText(MainActivity.this, "Failed to load calibration", Toast.LENGTH_SHORT).show();
+                    }
+                    
+                    updateCalibrationButtonStates();
+                });
+                
+            } catch (Exception e) {
+                Log.e(TAG, "Error loading calibration", e);
+                runOnUiThread(() -> {
+                    updateCalibrationStatus("Load error: " + e.getMessage());
+                    Toast.makeText(MainActivity.this, "Load error", Toast.LENGTH_SHORT).show();
+                });
+            }
+        }).start();
+    }
+    
+    /**
+     * Clear collected calibration images
+     * Requirements: 14.8
+     */
+    private void onClearCalibration() {
+        if (openCVProcessor != null && openCVProcessor.getVisualOdometryProcessor() != null) {
+            openCVProcessor.getVisualOdometryProcessor().clearCalibrationImages();
+        }
+        
+        calibrationImageCount = 0;
+        updateCalibrationStatus("Calibration images cleared");
+        updateCalibrationButtonStates();
+        
+        Toast.makeText(this, "Calibration images cleared", Toast.LENGTH_SHORT).show();
+        Log.d(TAG, "Calibration images cleared");
+    }
+    
+    /**
+     * Update calibration button states based on current mode
+     */
+    private void updateCalibrationButtonStates() {
+        if (btnStartCalibration != null) {
+            btnStartCalibration.setEnabled(!isCalibrationMode);
+        }
+        if (btnStopCalibration != null) {
+            btnStopCalibration.setEnabled(isCalibrationMode);
+        }
+        if (btnPerformCalibration != null) {
+            btnPerformCalibration.setEnabled(!isCalibrationMode && calibrationImageCount >= 3);
+        }
+        if (btnSaveCalibration != null) {
+            btnSaveCalibration.setEnabled(!isCalibrationMode);
+        }
+        if (btnLoadCalibration != null) {
+            btnLoadCalibration.setEnabled(!isCalibrationMode);
+        }
+        if (btnClearCalibration != null) {
+            btnClearCalibration.setEnabled(!isCalibrationMode);
+        }
+    }
+    
+    /**
+     * Update calibration status display
+     */
+    private void updateCalibrationStatus(String status) {
+        if (txtCalibrationStatus != null) {
+            txtCalibrationStatus.setText(status);
+        }
+        Log.d(TAG, "Calibration status: " + status);
+    }
+    
+    /**
+     * Add calibration image when in calibration mode
+     * This method should be called from the camera frame callback
+     * Requirements: 14.8
+     */
+    private void tryAddCalibrationImage(org.opencv.core.Mat frame) {
+        if (!isCalibrationMode || openCVProcessor == null) {
+            return;
+        }
+        
+        // Add calibration image in background thread to avoid blocking camera
+        new Thread(() -> {
+            try {
+                boolean added = openCVProcessor.addCalibrationImage(frame);
+                
+                runOnUiThread(() -> {
+                    if (added) {
+                        calibrationImageCount++;
+                        String message = String.format(getString(R.string.calibration_image_added), 
+                                calibrationImageCount, 10); // Target 10 images
+                        updateCalibrationStatus(message);
+                        updateCalibrationButtonStates();
+                        
+                        // Auto-stop calibration after collecting enough images
+                        if (calibrationImageCount >= 10) {
+                            onStopCalibration();
+                        }
+                    } else {
+                        updateCalibrationStatus(getString(R.string.calibration_image_rejected));
+                    }
+                });
+                
+            } catch (Exception e) {
+                Log.e(TAG, "Error adding calibration image", e);
+            }
+        }).start();
+    }
+    
+    /**
      * Initialize Android 10 compliance validation
      * Validates all Android 10 requirements: 6.1, 6.2, 6.3, 6.4
      */
@@ -853,6 +1263,10 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
                 selectedMode = OpenCVProcessor.ProcessingMode.SHARPEN;
                 modeName = "Sharpen";
                 break;
+            case 7: // Visual Odometry
+                selectedMode = OpenCVProcessor.ProcessingMode.VISUAL_ODOMETRY;
+                modeName = "Visual Odometry";
+                break;
             default:
                 selectedMode = OpenCVProcessor.ProcessingMode.GRAYSCALE;
                 modeName = "Grayscale";
@@ -880,9 +1294,26 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             case SHARPEN:
                 config.sharpenStrength = 1.0f;
                 break;
+            case VISUAL_ODOMETRY:
+                config.enableVisualOdometry = true;
+                config.enableDistanceDisplay = true;
+                config.enableCalibrationMode = false;
+                // Set default calibration file path
+                config.calibrationFilePath = getFilesDir().getAbsolutePath() + "/camera_calibration.yaml";
+                break;
         }
         
         openCVProcessor.setProcessingConfig(config);
+        
+        // Enable/disable visual odometry based on mode
+        if (selectedMode == OpenCVProcessor.ProcessingMode.VISUAL_ODOMETRY) {
+            openCVProcessor.setVisualOdometryEnabled(true);
+            showVisualOdometryControls(true);
+            Toast.makeText(this, getString(R.string.visual_odometry_enabled), Toast.LENGTH_SHORT).show();
+        } else {
+            openCVProcessor.setVisualOdometryEnabled(false);
+            showVisualOdometryControls(false);
+        }
         
         Log.i(TAG, "Processing mode changed to: " + modeName);
         Toast.makeText(this, "Processing mode: " + modeName, Toast.LENGTH_SHORT).show();
