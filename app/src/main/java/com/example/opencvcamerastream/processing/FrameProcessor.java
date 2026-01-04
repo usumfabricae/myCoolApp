@@ -46,7 +46,7 @@ public class FrameProcessor {
     private volatile boolean useZeroCopyPath = true; // Enable zero-copy by default
     
     // Visual odometry components (Task 30)
-    private final VisualOdometryProcessor visualOdometryProcessor;
+    private VisualOdometryProcessor visualOdometryProcessor;
     private Mat previousFrameMat = null; // Previous frame reference for visual odometry
     private volatile boolean useVisualOdometry = false; // Enable visual odometry processing
     private VisualOdometryCallback visualOdometryCallback;
