@@ -288,7 +288,7 @@ This implementation provides a production-ready OpenCV camera streaming applicat
   - Store calibration results using OpenCV's FileStorage
   - _Requirements: 14.8_
 
-- [ ] 32. Develop distance callback and UI integration
+- [x] 32. Develop distance callback and UI integration
   - Create DistanceCallback interface for real-time updates
   - Add distance display overlay to DisplayManager using OpenCV drawing functions
   - Use cv::putText() and cv::circle() for visual feedback
