@@ -164,10 +164,10 @@ public class FrameProcessor {
         this.zeroCopyProcessor = new ZeroCopyProcessor(openCVProcessor);
         this.copyTracker = new CopyOperationTracker();
         
-        // Initialize visual odometry processor (Task 30)
-        this.visualOdometryProcessor = new VisualOdometryProcessor();
+        // Visual odometry processor will be initialized lazily when OpenCV is ready
+        this.visualOdometryProcessor = null;
         
-        Log.d(TAG, "FrameProcessor created with FrameBuffer, zero-copy optimization, and visual odometry");
+        Log.d(TAG, "FrameProcessor created with FrameBuffer and zero-copy optimization");
     }
     
     /**
@@ -183,10 +183,10 @@ public class FrameProcessor {
         this.zeroCopyProcessor = new ZeroCopyProcessor(openCVProcessor);
         this.copyTracker = new CopyOperationTracker();
         
-        // Initialize visual odometry processor (Task 30)
-        this.visualOdometryProcessor = new VisualOdometryProcessor();
+        // Visual odometry processor will be initialized lazily when OpenCV is ready
+        this.visualOdometryProcessor = null;
         
-        Log.d(TAG, "FrameProcessor created with custom FrameBuffer, zero-copy optimization, and visual odometry");
+        Log.d(TAG, "FrameProcessor created with custom FrameBuffer and zero-copy optimization");
     }
     
     /**
@@ -204,6 +204,31 @@ public class FrameProcessor {
      */
     public void setVisualOdometryCallback(@Nullable VisualOdometryCallback callback) {
         this.visualOdometryCallback = callback;
+    }
+    
+    /**
+     * Initialize visual odometry processor when OpenCV is ready
+     * This should be called after OpenCV native libraries are loaded
+     * Requirements: 14.1, 14.2, 14.8
+     */
+    public void initializeVisualOdometry() {
+        if (visualOdometryProcessor == null) {
+            try {
+                visualOdometryProcessor = new VisualOdometryProcessor();
+                Log.d(TAG, "Visual odometry processor initialized successfully");
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to initialize visual odometry processor", e);
+                visualOdometryProcessor = null;
+            }
+        }
+    }
+    
+    /**
+     * Check if visual odometry is available
+     * @return true if visual odometry processor is initialized
+     */
+    public boolean isVisualOdometryAvailable() {
+        return visualOdometryProcessor != null;
     }
     
     /**

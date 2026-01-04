@@ -177,8 +177,7 @@ public class OpenCVProcessor {
             // OpenCV initialization will be handled by MainActivity's OpenCV loader callback
             // This method sets up the processor's internal state
             
-            // Initialize visual odometry processor with Samsung S9 defaults
-            initializeVisualOdometry();
+            // Visual odometry will be initialized separately when needed
             
             isInitialized = true;
             
@@ -920,6 +919,7 @@ public class OpenCVProcessor {
         isVisualOdometryEnabled = enabled;
         
         if (enabled && visualOdometryProcessor == null) {
+            // Initialize visual odometry processor when first enabled
             initializeVisualOdometry();
         }
         

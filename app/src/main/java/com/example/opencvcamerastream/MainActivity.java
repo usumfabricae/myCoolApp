@@ -1336,6 +1336,12 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
                         isOpenCVInitialized = true;
                         Log.i(TAG, "OpenCV processor initialized successfully");
                         
+                        // Initialize visual odometry processor now that OpenCV is ready
+                        if (frameProcessor != null) {
+                            frameProcessor.initializeVisualOdometry();
+                            Log.d(TAG, "Visual odometry processor initialized");
+                        }
+                        
                         // Show success message
                         runOnUiThread(() -> {
                             Toast.makeText(MainActivity.this, "OpenCV initialized", Toast.LENGTH_SHORT).show();
