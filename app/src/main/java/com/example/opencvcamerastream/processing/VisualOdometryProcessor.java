@@ -1247,7 +1247,7 @@ public class VisualOdometryProcessor {
             }
             
             // Use cv::undistort() for image correction
-            org.opencv.calib3d.Calib3d.undistort(inputImage, outputImage, cameraMatrix, distortionCoeffs);
+            Imgproc.undistort(inputImage, outputImage, cameraMatrix, distortionCoeffs);
             
             Log.v(TAG, "Image undistorted successfully");
             return true;

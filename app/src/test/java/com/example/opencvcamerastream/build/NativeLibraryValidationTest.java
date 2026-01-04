@@ -180,16 +180,21 @@ public class NativeLibraryValidationTest {
 
     @Test
     public void testValidateLibraryPresence_NoLibrariesAtAll() {
-        // Setup: Empty jniLibs directory
-        testJniLibsDir.mkdirs();
+        // Setup: Create a fresh empty jniLibs directory for this test
+        File emptyTestDir = new File(System.getProperty("java.io.tmpdir"), 
+            "test-empty-jniLibs-" + System.currentTimeMillis());
+        emptyTestDir.mkdirs();
 
         // Validate
-        ValidationResult result = validateLibraries(testJniLibsDir);
+        ValidationResult result = validateLibraries(emptyTestDir);
         
         assertFalse("Validation should fail when no libraries are present", result.isValid());
         assertEquals("Should have errors for all libraries across all architectures", 
             SUPPORTED_ARCHITECTURES.length * REQUIRED_LIBRARIES.length, 
             result.getErrors().size());
+        
+        // Cleanup
+        deleteDirectory(emptyTestDir);
     }
 
     @Test
