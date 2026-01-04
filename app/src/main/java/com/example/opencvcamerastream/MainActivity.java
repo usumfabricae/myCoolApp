@@ -26,6 +26,7 @@ import com.example.opencvcamerastream.processing.CopyOperationTracker;
 import com.example.opencvcamerastream.processing.ZeroCopyProcessor;
 import com.example.opencvcamerastream.compliance.Android10ComplianceValidator;
 import com.example.opencvcamerastream.compliance.Android10TestUtils;
+import com.example.opencvcamerastream.processing.VisualOdometryProcessor;
 import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
