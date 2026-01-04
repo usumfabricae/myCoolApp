@@ -310,7 +310,9 @@ public class FrameProcessor {
         zeroCopyProcessor.release();
         
         // Release visual odometry processor (Task 30)
-        visualOdometryProcessor.release();
+        if (visualOdometryProcessor != null) {
+            visualOdometryProcessor.release();
+        }
         
         // Release previous frame reference
         if (previousFrameMat != null) {
@@ -585,7 +587,7 @@ public class FrameProcessor {
         }
         
         try {
-            if (previousFrameMat != null && !previousFrameMat.empty()) {
+            if (previousFrameMat != null && !previousFrameMat.empty() && visualOdometryProcessor != null) {
                 // Use OpenCV's efficient Mat copying and memory management
                 // Create working copies to avoid modifying the original frames
                 Mat previousFrameCopy = previousFrameMat.clone();
@@ -879,8 +881,12 @@ public class FrameProcessor {
      * @param distCoeffs Distortion coefficients (can be null if no distortion correction needed)
      */
     public void setCameraIntrinsics(@NonNull Mat cameraMatrix, @Nullable Mat distCoeffs) {
-        visualOdometryProcessor.setCameraIntrinsics(cameraMatrix, distCoeffs);
-        Log.d(TAG, "Camera intrinsics set for visual odometry");
+        if (visualOdometryProcessor != null) {
+            visualOdometryProcessor.setCameraIntrinsics(cameraMatrix, distCoeffs);
+            Log.d(TAG, "Camera intrinsics set for visual odometry");
+        } else {
+            Log.w(TAG, "Visual odometry processor not initialized, cannot set camera intrinsics");
+        }
     }
     
     /**
@@ -890,11 +896,15 @@ public class FrameProcessor {
      * @return Performance metrics including processing time and frame pair count
      */
     public VisualOdometryPerformanceMetrics getVisualOdometryMetrics() {
-        return new VisualOdometryPerformanceMetrics(
-            visualOdometryProcessor.getTotalFramePairs(),
-            visualOdometryProcessor.getAverageProcessingTime(),
-            previousFrameMat != null
-        );
+        if (visualOdometryProcessor != null) {
+            return new VisualOdometryPerformanceMetrics(
+                visualOdometryProcessor.getTotalFramePairs(),
+                visualOdometryProcessor.getAverageProcessingTime(),
+                previousFrameMat != null
+            );
+        } else {
+            return new VisualOdometryPerformanceMetrics(0, 0.0, false);
+        }
     }
     
     /**
