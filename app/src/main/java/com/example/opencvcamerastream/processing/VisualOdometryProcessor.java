@@ -56,6 +56,9 @@ public class VisualOdometryProcessor {
     private BFMatcher bfMatcher;
     private FlannBasedMatcher flannMatcher;
     
+    // Initialization state
+    private boolean isInitialized = false;
+    
     // Camera intrinsic parameters
     private Mat cameraMatrix;
     private Mat distortionCoeffs;
@@ -232,16 +235,18 @@ public class VisualOdometryProcessor {
     }
     
     /**
-     * Constructor - initializes OpenCV feature detector and matcher
+     * Constructor - defers OpenCV initialization until explicitly called
      */
     public VisualOdometryProcessor() {
-        initialize();
+        // Don't initialize OpenCV objects here - wait for explicit initialization
+        // after OpenCV native libraries are loaded
     }
     
     /**
      * Initialize OpenCV components using built-in functions
+     * This must be called after OpenCV native libraries are loaded
      */
-    private void initialize() {
+    public void initialize() {
         try {
             // Create ORB feature detector using OpenCV built-in function
             // ORB is efficient for mobile devices and provides good performance
@@ -254,12 +259,22 @@ public class VisualOdometryProcessor {
             // Create FLANN-based matcher as alternative (faster for large descriptor sets)
             flannMatcher = FlannBasedMatcher.create();
             
+            isInitialized = true;
             Log.d(TAG, "VisualOdometryProcessor initialized with ORB detector and BF/FLANN matchers");
             
         } catch (Exception e) {
             Log.e(TAG, "Failed to initialize VisualOdometryProcessor", e);
+            isInitialized = false;
             throw new RuntimeException("VisualOdometryProcessor initialization failed", e);
         }
+    }
+    
+    /**
+     * Check if the processor is initialized and ready to use
+     * @return true if initialized, false otherwise
+     */
+    public boolean isInitialized() {
+        return isInitialized;
     }
     
     /**
@@ -292,6 +307,14 @@ public class VisualOdometryProcessor {
      * @param currentFrame Current camera frame (grayscale or color)
      */
     public void processFramePair(@NonNull Mat previousFrame, @NonNull Mat currentFrame) {
+        if (!isInitialized) {
+            Log.w(TAG, "VisualOdometryProcessor not initialized, skipping processing");
+            if (distanceCallback != null) {
+                distanceCallback.onProcessingError(new IllegalStateException("VisualOdometryProcessor not initialized"));
+            }
+            return;
+        }
+        
         long startTime = System.currentTimeMillis();
         
         try {

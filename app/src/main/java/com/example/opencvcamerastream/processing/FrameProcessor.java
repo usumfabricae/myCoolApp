@@ -215,6 +215,7 @@ public class FrameProcessor {
         if (visualOdometryProcessor == null) {
             try {
                 visualOdometryProcessor = new VisualOdometryProcessor();
+                visualOdometryProcessor.initialize(); // Initialize OpenCV components
                 Log.d(TAG, "Visual odometry processor initialized successfully");
             } catch (Exception e) {
                 Log.e(TAG, "Failed to initialize visual odometry processor", e);

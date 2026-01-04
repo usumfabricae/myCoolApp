@@ -795,6 +795,7 @@ public class OpenCVProcessor {
     private void initializeVisualOdometry() {
         try {
             visualOdometryProcessor = new VisualOdometryProcessor();
+            visualOdometryProcessor.initialize(); // Initialize OpenCV components
             
             // Set Samsung S9 camera defaults (approximate values)
             // Samsung S9 main camera specifications:
