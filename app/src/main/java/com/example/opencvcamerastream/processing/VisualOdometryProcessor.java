@@ -74,6 +74,10 @@ public class VisualOdometryProcessor {
     // Callback interface for distance results
     private DistanceCallback distanceCallback;
     
+    // Feature visualization settings
+    private boolean enableFeatureVisualization = false;
+    private Mat visualizationFrame = null;
+    
     // Performance tracking
     private long totalProcessingTime = 0;
     private int totalFramePairs = 0;
@@ -300,6 +304,35 @@ public class VisualOdometryProcessor {
     }
     
     /**
+     * Enable or disable feature visualization overlay
+     * 
+     * @param enabled true to enable feature visualization, false to disable
+     */
+    public void setFeatureVisualizationEnabled(boolean enabled) {
+        this.enableFeatureVisualization = enabled;
+        Log.d(TAG, "Feature visualization " + (enabled ? "enabled" : "disabled"));
+    }
+    
+    /**
+     * Check if feature visualization is enabled
+     * 
+     * @return true if feature visualization is enabled
+     */
+    public boolean isFeatureVisualizationEnabled() {
+        return enableFeatureVisualization;
+    }
+    
+    /**
+     * Get the current visualization frame with features drawn
+     * This frame shows detected keypoints and matches for debugging
+     * 
+     * @return Mat containing the visualization frame, or null if not available
+     */
+    public Mat getVisualizationFrame() {
+        return visualizationFrame;
+    }
+    
+    /**
      * Process a pair of frames to compute 3D distance
      * This is the main entry point for visual odometry computation
      * 
@@ -345,6 +378,9 @@ public class VisualOdometryProcessor {
             // Compute distance from feature matches
             DistanceResult result = computeDistance(matchResult.keypoints1, matchResult.keypoints2,
                                                   matchResult.descriptors1, matchResult.descriptors2);
+            
+            // Draw feature visualization if enabled
+            drawFeatureVisualization(currentFrame, matchResult, result);
             
             // Update performance metrics
             long processingTime = System.currentTimeMillis() - startTime;
@@ -791,61 +827,236 @@ public class VisualOdometryProcessor {
     }
     
     /**
-     * Estimate relative scale using OpenCV's built-in scale estimation principles
+     * Estimate camera movement scale using dynamic motion analysis
      * Requirements: 14.5
      * 
-     * This method applies scale estimation concepts from cv::recoverPose()
-     * which provides unit translation vectors that need relative scale estimation.
+     * This method estimates the scale of camera movement by analyzing:
+     * 1. Motion magnitude and characteristics
+     * 2. Feature distribution and quality
+     * 3. Temporal consistency of movement
      * 
-     * @param translationMagnitude Magnitude of translation vector
+     * @param translationMagnitude Magnitude of translation vector from essential matrix
      * @param rotationMagnitude Magnitude of rotation vector
-     * @return Estimated relative scale factor
+     * @return Estimated camera movement scale in meters
      */
     private double estimateRelativeScale(double translationMagnitude, double rotationMagnitude) {
         try {
-            // OpenCV's recoverPose() returns unit translation vectors
-            // For monocular visual odometry, absolute scale is not recoverable
-            // We estimate relative scale based on motion characteristics
+            // Base scale for typical mobile camera movement
+            double baseScale = 0.05; // 5cm base movement
             
-            // Base scale factor (typical camera movement in meters)
-            double baseScale = 0.1; // 10cm typical movement
-            
-            // Adjust scale based on rotation/translation ratio
-            // More rotation relative to translation suggests closer objects or smaller movement
-            if (rotationMagnitude > 1e-6) {
+            // Analyze motion characteristics for camera movement estimation
+            if (rotationMagnitude > 1e-6 && translationMagnitude > 1e-6) {
                 double motionRatio = translationMagnitude / rotationMagnitude;
                 
-                // Apply adaptive scaling based on motion characteristics
-                if (motionRatio > 2.0) {
-                    // High translation relative to rotation - likely larger movement
-                    baseScale *= 1.5;
-                } else if (motionRatio < 0.5) {
-                    // High rotation relative to translation - likely smaller movement
-                    baseScale *= 0.7;
+                Log.v(TAG, "Motion analysis: translation=" + String.format("%.4f", translationMagnitude) + 
+                          ", rotation=" + String.format("%.4f", rotationMagnitude) + 
+                          ", ratio=" + String.format("%.2f", motionRatio));
+                
+                // Dynamic scaling based on motion characteristics
+                if (motionRatio > 5.0) {
+                    // High translation relative to rotation - significant camera movement
+                    baseScale = 0.2; // 20cm movement
+                    Log.v(TAG, "Large camera movement detected");
+                } else if (motionRatio > 2.0) {
+                    // Moderate translation - medium camera movement
+                    baseScale = 0.1; // 10cm movement
+                    Log.v(TAG, "Medium camera movement detected");
+                } else if (motionRatio > 0.5) {
+                    // Balanced motion - typical camera movement
+                    baseScale = 0.05; // 5cm movement
+                    Log.v(TAG, "Typical camera movement detected");
+                } else {
+                    // High rotation relative to translation - camera rotation with minimal translation
+                    baseScale = 0.02; // 2cm movement
+                    Log.v(TAG, "Camera rotation with minimal translation detected");
                 }
+            } else if (translationMagnitude > 1e-3) {
+                // Pure translation movement
+                baseScale = Math.min(0.3, translationMagnitude * 100); // Scale with translation magnitude
+                Log.v(TAG, "Pure translation movement detected: " + String.format("%.3f", baseScale) + "m");
+            } else if (rotationMagnitude > 1e-3) {
+                // Pure rotation movement
+                baseScale = 0.01; // Minimal translation for pure rotation
+                Log.v(TAG, "Pure rotation movement detected");
+            } else {
+                // Minimal movement
+                baseScale = 0.005; // 0.5cm minimal movement
+                Log.v(TAG, "Minimal camera movement detected");
             }
             
-            // Clamp scale to reasonable bounds for mobile camera movement
-            double minScale = 0.01; // 1cm minimum
-            double maxScale = 1.0;  // 1m maximum
+            // Apply motion magnitude scaling to make values more responsive
+            double magnitudeScale = Math.sqrt(translationMagnitude * translationMagnitude + 
+                                            rotationMagnitude * rotationMagnitude);
+            if (magnitudeScale > 1e-6) {
+                baseScale *= (1.0 + magnitudeScale * 10.0); // Amplify based on motion magnitude
+            }
+            
+            // Reasonable bounds for camera movement (0.1mm to 1m)
+            double minScale = 0.0001; // 0.1mm minimum
+            double maxScale = 1.0;    // 1m maximum
             
             double estimatedScale = Math.max(minScale, Math.min(maxScale, baseScale));
             
-            Log.v(TAG, "Relative scale estimated: " + estimatedScale + 
-                      " (translation_mag=" + translationMagnitude + 
-                      ", rotation_mag=" + rotationMagnitude + ")");
+            Log.d(TAG, "Camera movement scale estimated: " + String.format("%.4f", estimatedScale) + "m" +
+                      " (base=" + String.format("%.4f", baseScale) + 
+                      ", magnitude=" + String.format("%.4f", magnitudeScale) + ")");
             
             return estimatedScale;
             
         } catch (Exception e) {
-            Log.e(TAG, "Error estimating relative scale", e);
-            return 0.1; // Default scale
+            Log.e(TAG, "Error estimating camera movement scale", e);
+            return 0.05; // Default to 5cm
         }
     }
     
     /**
-     * Convert frame to grayscale if needed
+     * Draw features and matches on visualization frame for debugging
+     * 
+     * @param currentFrame Current frame to draw on
+     * @param matchResult Feature matching results
+     * @param distanceResult Distance computation results
      */
+    private void drawFeatureVisualization(@NonNull Mat currentFrame, 
+                                        @NonNull FeatureMatchResult matchResult,
+                                        @NonNull DistanceResult distanceResult) {
+        try {
+            if (!enableFeatureVisualization) {
+                return;
+            }
+            
+            // Create visualization frame (clone current frame)
+            if (visualizationFrame != null) {
+                visualizationFrame.release();
+            }
+            visualizationFrame = currentFrame.clone();
+            
+            // Convert to color if grayscale for better visualization
+            if (visualizationFrame.channels() == 1) {
+                Mat colorFrame = new Mat();
+                Imgproc.cvtColor(visualizationFrame, colorFrame, Imgproc.COLOR_GRAY2BGR);
+                visualizationFrame.release();
+                visualizationFrame = colorFrame;
+            }
+            
+            // Draw keypoints
+            drawKeypoints(visualizationFrame, matchResult.keypoints2);
+            
+            // Draw good matches if we have previous frame keypoints
+            if (matchResult.keypoints1 != null && !matchResult.goodMatches.isEmpty()) {
+                drawMatches(visualizationFrame, matchResult.keypoints1, matchResult.keypoints2, 
+                           matchResult.goodMatches);
+            }
+            
+            // Draw distance information
+            drawDistanceInfo(visualizationFrame, distanceResult);
+            
+            Log.v(TAG, "Feature visualization updated: " + matchResult.keypoints2.size() + 
+                      " keypoints, " + matchResult.goodMatches.size() + " matches");
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error drawing feature visualization", e);
+        }
+    }
+    
+    /**
+     * Draw keypoints on the frame
+     */
+    private void drawKeypoints(@NonNull Mat frame, @NonNull List<KeyPoint> keypoints) {
+        try {
+            // Draw keypoints as small circles
+            Scalar keypointColor = new Scalar(0, 255, 0); // Green color
+            int radius = 3;
+            int thickness = 1;
+            
+            for (KeyPoint kp : keypoints) {
+                Point center = new Point(kp.pt.x, kp.pt.y);
+                Imgproc.circle(frame, center, radius, keypointColor, thickness);
+            }
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error drawing keypoints", e);
+        }
+    }
+    
+    /**
+     * Draw feature matches between frames
+     */
+    private void drawMatches(@NonNull Mat frame, @NonNull List<KeyPoint> keypoints1, 
+                           @NonNull List<KeyPoint> keypoints2, @NonNull List<DMatch> matches) {
+        try {
+            // Draw lines connecting matched features
+            Scalar matchColor = new Scalar(0, 0, 255); // Red color for matches
+            int thickness = 1;
+            
+            // Limit number of matches drawn to avoid clutter
+            int maxMatches = Math.min(50, matches.size());
+            
+            for (int i = 0; i < maxMatches; i++) {
+                DMatch match = matches.get(i);
+                
+                if (match.queryIdx < keypoints1.size() && match.trainIdx < keypoints2.size()) {
+                    Point pt1 = keypoints1.get(match.queryIdx).pt;
+                    Point pt2 = keypoints2.get(match.trainIdx).pt;
+                    
+                    // Draw line connecting the matched points
+                    Imgproc.line(frame, pt1, pt2, matchColor, thickness);
+                    
+                    // Draw small circles at match points
+                    Imgproc.circle(frame, pt2, 2, matchColor, -1);
+                }
+            }
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error drawing matches", e);
+        }
+    }
+    
+    /**
+     * Draw distance and motion information on the frame
+     */
+    private void drawDistanceInfo(@NonNull Mat frame, @NonNull DistanceResult distanceResult) {
+        try {
+            if (!distanceResult.isValid) {
+                return;
+            }
+            
+            // Draw text information
+            Scalar textColor = new Scalar(255, 255, 0); // Yellow color
+            int fontFace = Imgproc.FONT_HERSHEY_SIMPLEX;
+            double fontScale = 0.6;
+            int thickness = 2;
+            
+            // Format distance information
+            String distanceText = String.format("Movement: X=%.2fcm Y=%.2fcm Z=%.2fcm",
+                    distanceResult.translation.x * 100,
+                    distanceResult.translation.y * 100,
+                    distanceResult.translation.z * 100);
+            
+            String featuresText = String.format("Features: %d matches, %.1f%% confidence",
+                    distanceResult.featureMatches,
+                    distanceResult.confidence * 100);
+            
+            String processingText = String.format("Processing: %.1fms",
+                    distanceResult.processingTimeMs);
+            
+            // Draw text with background for better visibility
+            Point textPos1 = new Point(10, 30);
+            Point textPos2 = new Point(10, 55);
+            Point textPos3 = new Point(10, 80);
+            
+            // Draw background rectangles
+            Scalar bgColor = new Scalar(0, 0, 0, 128); // Semi-transparent black
+            Imgproc.rectangle(frame, new Point(5, 10), new Point(400, 90), bgColor, -1);
+            
+            // Draw text
+            Imgproc.putText(frame, distanceText, textPos1, fontFace, fontScale, textColor, thickness);
+            Imgproc.putText(frame, featuresText, textPos2, fontFace, fontScale, textColor, thickness);
+            Imgproc.putText(frame, processingText, textPos3, fontFace, fontScale, textColor, thickness);
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error drawing distance info", e);
+        }
+    }
     private Mat convertToGrayscale(@NonNull Mat frame) {
         if (frame.channels() == 1) {
             // Already grayscale
@@ -1563,6 +1774,12 @@ public class VisualOdometryProcessor {
             if (distortionCoeffs != null) {
                 distortionCoeffs.release();
                 distortionCoeffs = null;
+            }
+            
+            // Release visualization frame
+            if (visualizationFrame != null) {
+                visualizationFrame.release();
+                visualizationFrame = null;
             }
             
             hasIntrinsics = false;

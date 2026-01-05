@@ -904,6 +904,15 @@ public class OpenCVProcessor {
                 grayFrame.release();
             }
             
+            // Return visualization frame if feature visualization is enabled
+            if (visualOdometryProcessor.isFeatureVisualizationEnabled()) {
+                Mat visualizationFrame = visualOdometryProcessor.getVisualizationFrame();
+                if (visualizationFrame != null && !visualizationFrame.empty()) {
+                    Log.v(TAG, "Returning feature visualization frame");
+                    return visualizationFrame.clone(); // Return copy for display
+                }
+            }
+            
             // Return original frame for display (visual odometry works in background)
             return inputFrame;
             
@@ -932,6 +941,29 @@ public class OpenCVProcessor {
      */
     public boolean isVisualOdometryEnabled() {
         return isVisualOdometryEnabled && visualOdometryProcessor != null;
+    }
+    
+    /**
+     * Enable or disable feature visualization overlay
+     * 
+     * @param enabled true to show features and matches on video, false to hide
+     */
+    public void setFeatureVisualizationEnabled(boolean enabled) {
+        if (visualOdometryProcessor != null) {
+            visualOdometryProcessor.setFeatureVisualizationEnabled(enabled);
+            Log.d(TAG, "Feature visualization " + (enabled ? "enabled" : "disabled"));
+        } else {
+            Log.w(TAG, "Cannot set feature visualization - visual odometry processor not initialized");
+        }
+    }
+    
+    /**
+     * Check if feature visualization is enabled
+     * 
+     * @return true if feature visualization is enabled
+     */
+    public boolean isFeatureVisualizationEnabled() {
+        return visualOdometryProcessor != null && visualOdometryProcessor.isFeatureVisualizationEnabled();
     }
     
     /**

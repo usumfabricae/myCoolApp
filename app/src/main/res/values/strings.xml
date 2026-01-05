@@ -55,5 +55,7 @@
     <string name="save_calibration">Save Calibration</string>
     <string name="load_calibration">Load Calibration</string>
     <string name="clear_calibration">Clear Images</string>
+    <string name="show_features">Show Features</string>
+    <string name="hide_features">Hide Features</string>
     <string name="distance_display">Distance: X=%.2fcm Y=%.2fcm Z=%.2fcm</string>
 </resources>

@@ -71,6 +71,7 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
     private Button btnSaveCalibration;
     private Button btnLoadCalibration;
     private Button btnClearCalibration;
+    private ToggleButton toggleFeatureVisualization;
     private android.widget.TextView txtCalibrationStatus;
     private android.widget.TextView txtDistanceDisplay;
     private boolean isCalibrationMode = false;
@@ -897,6 +898,7 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             btnSaveCalibration = findViewById(R.id.btnSaveCalibration);
             btnLoadCalibration = findViewById(R.id.btnLoadCalibration);
             btnClearCalibration = findViewById(R.id.btnClearCalibration);
+            toggleFeatureVisualization = findViewById(R.id.toggleFeatureVisualization);
             
             // Get status and distance display
             txtCalibrationStatus = findViewById(R.id.txtCalibrationStatus);
@@ -920,6 +922,11 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             }
             if (btnClearCalibration != null) {
                 btnClearCalibration.setOnClickListener(v -> onClearCalibration());
+            }
+            if (toggleFeatureVisualization != null) {
+                toggleFeatureVisualization.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                    onToggleFeatureVisualization(isChecked);
+                });
             }
             
             // Set initial button states
@@ -1107,6 +1114,28 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
         
         Toast.makeText(this, "Calibration images cleared", Toast.LENGTH_SHORT).show();
         Log.d(TAG, "Calibration images cleared");
+    }
+    
+    /**
+     * Toggle feature visualization overlay
+     * 
+     * @param enabled true to show features and matches on video, false to hide
+     */
+    private void onToggleFeatureVisualization(boolean enabled) {
+        if (openCVProcessor != null) {
+            openCVProcessor.setFeatureVisualizationEnabled(enabled);
+            
+            String message = enabled ? "Feature visualization enabled" : "Feature visualization disabled";
+            Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+            Log.d(TAG, message);
+        } else {
+            Log.w(TAG, "Cannot toggle feature visualization - OpenCV processor not initialized");
+            
+            // Reset toggle button state
+            if (toggleFeatureVisualization != null) {
+                toggleFeatureVisualization.setChecked(false);
+            }
+        }
     }
     
     /**
