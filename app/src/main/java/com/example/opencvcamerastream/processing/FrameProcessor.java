@@ -216,6 +216,34 @@ public class FrameProcessor {
             try {
                 visualOdometryProcessor = new VisualOdometryProcessor();
                 visualOdometryProcessor.initialize(); // Initialize OpenCV components
+                
+                // Set up the callback once during initialization
+                visualOdometryProcessor.setDistanceCallback(new VisualOdometryProcessor.DistanceCallback() {
+                    @Override
+                    public void onDistanceComputed(@NonNull VisualOdometryProcessor.DistanceResult result) {
+                        Log.d(TAG, "Visual odometry distance computed: " + result);
+                        if (visualOdometryCallback != null) {
+                            visualOdometryCallback.onDistanceComputed(result);
+                        }
+                    }
+                    
+                    @Override
+                    public void onInsufficientFeatures(int matchCount) {
+                        Log.v(TAG, "Visual odometry: insufficient features (" + matchCount + "), continuing processing");
+                        if (visualOdometryCallback != null) {
+                            visualOdometryCallback.onInsufficientFeatures(matchCount);
+                        }
+                    }
+                    
+                    @Override
+                    public void onProcessingError(@NonNull Exception error) {
+                        Log.w(TAG, "Visual odometry processing error, continuing camera processing", error);
+                        if (visualOdometryCallback != null) {
+                            visualOdometryCallback.onVisualOdometryError(error);
+                        }
+                    }
+                });
+                
                 Log.d(TAG, "Visual odometry processor initialized successfully");
             } catch (Exception e) {
                 Log.e(TAG, "Failed to initialize visual odometry processor", e);
@@ -593,48 +621,13 @@ public class FrameProcessor {
                 Mat previousFrameCopy = previousFrameMat.clone();
                 Mat currentFrameCopy = currentFrameMat.clone();
                 
-                // Set up visual odometry callback to handle results
-                visualOdometryProcessor.setDistanceCallback(new VisualOdometryProcessor.DistanceCallback() {
-                    @Override
-                    public void onDistanceComputed(@NonNull VisualOdometryProcessor.DistanceResult result) {
-                        Log.d(TAG, "Visual odometry distance computed: " + result);
-                        if (visualOdometryCallback != null) {
-                            visualOdometryCallback.onDistanceComputed(result);
-                        }
-                        
-                        // Clean up working copies
-                        previousFrameCopy.release();
-                        currentFrameCopy.release();
-                    }
-                    
-                    @Override
-                    public void onInsufficientFeatures(int matchCount) {
-                        Log.w(TAG, "Visual odometry: insufficient features (" + matchCount + ")");
-                        if (visualOdometryCallback != null) {
-                            visualOdometryCallback.onInsufficientFeatures(matchCount);
-                        }
-                        
-                        // Clean up working copies
-                        previousFrameCopy.release();
-                        currentFrameCopy.release();
-                    }
-                    
-                    @Override
-                    public void onProcessingError(@NonNull Exception error) {
-                        Log.e(TAG, "Visual odometry processing error", error);
-                        if (visualOdometryCallback != null) {
-                            visualOdometryCallback.onVisualOdometryError(error);
-                        }
-                        
-                        // Clean up working copies
-                        previousFrameCopy.release();
-                        currentFrameCopy.release();
-                    }
-                });
-                
                 // Process frame pair using OpenCV's built-in functions
-                // This implements frame pair processing as required by Task 30
+                // The callback is already set up during initialization
                 visualOdometryProcessor.processFramePair(previousFrameCopy, currentFrameCopy);
+                
+                // Clean up working copies immediately
+                previousFrameCopy.release();
+                currentFrameCopy.release();
                 
             } else {
                 Log.v(TAG, "Visual odometry: no previous frame available, skipping");
@@ -644,7 +637,7 @@ public class FrameProcessor {
             updatePreviousFrameReference(currentFrameMat);
             
         } catch (Exception e) {
-            Log.e(TAG, "Error in visual odometry processing", e);
+            Log.w(TAG, "Error in visual odometry processing, continuing camera processing", e);
             if (visualOdometryCallback != null) {
                 visualOdometryCallback.onVisualOdometryError(e);
             }

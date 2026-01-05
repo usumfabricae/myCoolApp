@@ -75,6 +75,7 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
     private android.widget.TextView txtDistanceDisplay;
     private boolean isCalibrationMode = false;
     private int calibrationImageCount = 0;
+    private int insufficientFeaturesCount = 0; // Track consecutive insufficient features
     
     // Additional components referenced in the code
     private com.example.opencvcamerastream.processing.FrameProcessor frameProcessor;
@@ -441,6 +442,9 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             public void onDistanceComputed(@NonNull VisualOdometryProcessor.DistanceResult result) {
                 Log.d(TAG, "Distance computed: " + result.toString());
                 
+                // Reset insufficient features counter on successful computation
+                insufficientFeaturesCount = 0;
+                
                 // Update distance display on UI thread
                 runOnUiThread(() -> {
                     if (txtDistanceDisplay != null && result.isValid) {
@@ -456,14 +460,18 @@ public class MainActivity extends AppCompatActivity implements PermissionHandler
             
             @Override
             public void onInsufficientFeatures(int matchCount) {
-                Log.w(TAG, "Insufficient features: " + matchCount);
+                Log.v(TAG, "Insufficient features: " + matchCount + ", continuing processing");
                 
-                runOnUiThread(() -> {
-                    if (txtDistanceDisplay != null) {
-                        txtDistanceDisplay.setText(getString(R.string.visual_odometry_insufficient_features));
-                        txtDistanceDisplay.setVisibility(android.view.View.VISIBLE);
-                    }
-                });
+                // Only show message after several consecutive failures to avoid flickering
+                insufficientFeaturesCount++;
+                if (insufficientFeaturesCount > 5) { // Show message after 5 consecutive failures
+                    runOnUiThread(() -> {
+                        if (txtDistanceDisplay != null) {
+                            txtDistanceDisplay.setText(getString(R.string.visual_odometry_insufficient_features));
+                            txtDistanceDisplay.setVisibility(android.view.View.VISIBLE);
+                        }
+                    });
+                }
             }
             
             @Override

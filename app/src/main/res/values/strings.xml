@@ -39,7 +39,7 @@
     <!-- Visual Odometry strings -->
     <string name="visual_odometry_enabled">Visual Odometry: Distance tracking enabled</string>
     <string name="visual_odometry_disabled">Visual Odometry: Distance tracking disabled</string>
-    <string name="visual_odometry_insufficient_features">Insufficient features for distance tracking</string>
+    <string name="visual_odometry_insufficient_features">Looking for features to track...</string>
     <string name="visual_odometry_error">Visual odometry processing error</string>
     <string name="calibration_mode_enabled">Camera calibration mode enabled</string>
     <string name="calibration_mode_disabled">Camera calibration mode disabled</string>

@@ -43,9 +43,9 @@ public class VisualOdometryProcessor {
     private static final String TAG = "VisualOdometryProcessor";
     
     // Feature detection parameters
-    private static final int MAX_FEATURES = 500;
-    private static final float RATIO_THRESHOLD = 0.7f;
-    private static final int MIN_MATCHES = 10;
+    private static final int MAX_FEATURES = 1000; // Increased from 500
+    private static final float RATIO_THRESHOLD = 0.75f; // Slightly more lenient
+    private static final int MIN_MATCHES = 5; // Reduced from 10 for more lenient detection
     
     // RANSAC parameters for essential matrix estimation
     private static final double RANSAC_THRESHOLD = 1.0;
